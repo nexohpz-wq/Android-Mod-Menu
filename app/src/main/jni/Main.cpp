@@ -14,7 +14,10 @@ bool isLibraryLoaded(const char* libName) {
 }
 
 void hack_thread() {
-    do { sleep(1); } while (!isLibraryLoaded("libil2cpp.so"));
+    // Espera a que el juego cargue su motor
+    while (!isLibraryLoaded("libil2cpp.so")) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
     LOGI("Mod Menu Iniciado");
 }
 
