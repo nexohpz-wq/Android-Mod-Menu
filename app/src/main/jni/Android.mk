@@ -3,7 +3,7 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 LOCAL_MODULE    := MyLibName
 
-# Solo compilamos nuestro código y la librería de hooks (Dobby)
+# Compilamos solo Main.cpp y Dobby
 LOCAL_SRC_FILES := Main.cpp \
                    Dobby/dobby.c
 
