@@ -1,6 +1,5 @@
 #include <jni.h>
 #include "Includes/Utils.hpp"
-#include "Menu/Menu.h"
 
 jstring GetFeatureList(JNIEnv *env, jobject thiz) {
     return env->NewStringUTF("ESP Hack");
