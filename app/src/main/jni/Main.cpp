@@ -7,9 +7,8 @@
 #include <cmath>
 #include <android/log.h>
 #include "Includes/Utils.hpp"
-#include "Dobby/dobby.h" // Ruta correcta para los headers
+#include "dobby.h" // <-- Ruta corregida
 
-// Offsets (por ahora en 0)
 uintptr_t offset_WorldToScreenPoint = 0x0;
 uintptr_t offset_Camera_get_main = 0x0;
 uintptr_t offset_PlayerMovement_Update = 0x0;
