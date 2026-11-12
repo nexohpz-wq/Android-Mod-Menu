@@ -1,13 +1,13 @@
 #include <jni.h>
-#include "Menu/Menu.h"
+#include "Includes/Includes.h"
 #include <thread>
 #include <chrono>
 #include <android/log.h>
+#include <dlfcn.h>
 
 #define LOG_TAG "ESP_MOD"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
-// Simulamos la función isLibraryLoaded para que no dependa de Utils.hpp
 bool isLibraryLoaded(const char* libName) {
     void* handle = dlopen(libName, RTLD_LAZY);
     if (handle) { dlclose(handle); return true; }
@@ -37,14 +37,8 @@ void* hack_thread(void*) {
 }
 
 void DrawMenu() {
-    if (ImGui::BeginTabBar("Features")) {
-        if (ImGui::BeginTabItem("ESP Hack")) {
-            ImGui::Checkbox("Skeleton ESP (Test)", &skeleton_esp);
-            ImGui::Text("Linea roja = Dibujo Nativo OK");
-            ImGui::EndTabItem();
-        }
-        ImGui::EndTabBar();
-    }
+    ImGui::Checkbox("Skeleton ESP (Test)", &skeleton_esp);
+    ImGui::Text("Linea roja = Dibujo Nativo OK");
 }
 
 __attribute__((constructor))
