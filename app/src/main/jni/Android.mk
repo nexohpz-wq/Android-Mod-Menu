@@ -3,9 +3,12 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 LOCAL_MODULE    := MyLibName
 
-# Compilamos solo Main.cpp y Dobby
+# Compilamos Main.cpp y buscamos TODOS los archivos .c y .cpp dentro de la carpeta Dobby
 LOCAL_SRC_FILES := Main.cpp \
-                   Dobby/dobby.c
+                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/*.c)) \
+                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/*.cpp)) \
+                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/*/*.c)) \
+                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/*/*.cpp))
 
 LOCAL_C_INCLUDES := $(LOCAL_PATH) \
                     $(LOCAL_PATH)/Dobby
