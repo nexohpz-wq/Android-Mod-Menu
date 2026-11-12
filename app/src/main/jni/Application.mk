@@ -1,6 +1,3 @@
-LOCAL_PATH := $(call my-dir)
-
-include $(CLEAR_VARS)
-LOCAL_MODULE    := MyLibName
-LOCAL_SRC_FILES := $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/src/*.cpp))
-include $(BUILD_SHARED_LIBRARY)
+APP_ABI := arm64-v8a
+APP_STL := c++_static
+APP_PLATFORM := android-21
