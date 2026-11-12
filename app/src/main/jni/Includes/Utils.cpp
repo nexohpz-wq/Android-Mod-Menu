@@ -28,21 +28,16 @@ void* getSymAddress(const char *libraryName, const char *SymName, bool relative)
         LOGE("%s %s", OBFUSCATE("xdl_open failed for"), libraryName);
         return nullptr;
     }
-
     memset(&info, 0, sizeof(xdl_info_t));
     if (0 > xdl_info(handle, XDL_DI_DLINFO, &info)) {
         LOGE("%s %llx %s", OBFUSCATE(">>> getsym_xdl_info(XDL_DI_DLINFO,"), (uintptr_t) handle, SymName);
     }
-
     void *symbol_addr = xdl_sym(handle, SymName, nullptr);
-
     if (symbol_addr == nullptr) {
         LOGW("%s", OBFUSCATE(">>> !xdl_sym -> xdl_dsym..."));
         symbol_addr = xdl_dsym(handle, SymName, nullptr);
     }
-
     xdl_close(handle);
-
     if (relative) {
         return (void*)((uintptr_t) symbol_addr - (uintptr_t) info.dli_fbase);
     } else return symbol_addr;
@@ -59,15 +54,12 @@ void* getAbsAddress(const char *libraryName, uintptr_t relativeAddr) {
 std::string getRelativeAddress(const char *libraryName, const char *rootOffset, const char *addOffset) {
     uintptr_t offset = str2offset(rootOffset);
     uintptr_t offset2 = str2offset(addOffset);
-
     uintptr_t result;
-
     if (offset != 0) {
         result = offset + offset2;
     } else {
         result = (uintptr_t)getSymAddress(libraryName, rootOffset, true) + offset2;
     }
-
     std::stringstream ss;
     ss << OBFUSCATE("0x") << std::hex << std::uppercase << result;
     return ss.str();
@@ -75,7 +67,6 @@ std::string getRelativeAddress(const char *libraryName, const char *rootOffset, 
 
 void* getAbsoluteAddress(const char *libraryName, const char *relative) {
     uintptr_t offset = str2offset(relative);
-
     if(offset != 0) {
         return getAbsAddress(libraryName, offset);
     } else {
@@ -105,12 +96,9 @@ bool isLibraryLoaded(const char *libraryName) {
 
 uintptr_t str2offset(const char *c) {
     int base = 16;
-    static_assert(sizeof(uintptr_t) == sizeof(unsigned long)
-                  || sizeof(uintptr_t) == sizeof(unsigned long long));
-
+    static_assert(sizeof(uintptr_t) == sizeof(unsigned long) || sizeof(uintptr_t) == sizeof(unsigned long long));
     if (sizeof(uintptr_t) == sizeof(unsigned long)) {
         return strtoul(c, nullptr, base);
     }
-
     return strtoull(c, nullptr, base);
 }
