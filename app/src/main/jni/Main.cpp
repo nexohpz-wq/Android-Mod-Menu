@@ -1,5 +1,6 @@
 #include <jni.h>
-#include "Includes/Includes.h"
+#include "imgui.h"
+#include "imgui_internal.h"
 #include <thread>
 #include <chrono>
 #include <android/log.h>
