@@ -2,5 +2,5 @@ LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE    := MyLibName
-LOCAL_SRC_FILES := $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/src/*.cpp))
+LOCAL_SRC_FILES := src/Main.cpp
 include $(BUILD_SHARED_LIBRARY)
