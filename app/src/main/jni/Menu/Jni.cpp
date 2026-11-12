@@ -7,14 +7,13 @@
 #include "Includes/Logger.h"
 #include "Includes/Utils.hpp"
 
-jstring GetFeatureList(JNIEnv *env, jobject thiz) { return env->NewStringUTF("Skeleton ESP"); }
-void Changes(JNIEnv *env, jclass clazz, jobject obj, jint feature, jstring value, jint type, jlong longValue, jboolean boolValue, jstring stringValue) {}
-void setText(JNIEnv *env, jobject obj, const char* text) {}
-void startService(JNIEnv *env, jobject ctx) {}
-void startActivityPermisson(JNIEnv *env, jobject ctx) {}
-void* exit_thread(void*) { return nullptr; }
+extern "C" JNIEXPORT jstring JNICALL Java_com_android_support_Launcher_GetFeatureList(JNIEnv *env, jclass clazz) {
+    return env->NewStringUTF("Skeleton ESP");
+}
 
-void CheckOverlayPermission(JNIEnv *env, jclass thiz, jobject ctx) {
+extern "C" JNIEXPORT void JNICALL Java_com_android_support_Launcher_Changes(JNIEnv *env, jclass clazz, jobject obj, jint feature, jstring value, jint type, jlong longValue, jboolean boolValue, jstring stringValue) {}
+
+extern "C" JNIEXPORT void JNICALL Java_com_android_support_Launcher_CheckOverlayPermission(JNIEnv *env, jclass thiz, jobject ctx) {
     LOGI("Check overlay permission");
     jclass native_context = env->GetObjectClass(ctx);
     jmethodID startServiceMethod = env->GetMethodID(native_context, "startService", "(Landroid/content/Intent;)Landroid/content/ComponentName;");
@@ -33,10 +32,9 @@ extern "C" jint JNI_OnLoad(JavaVM* vm, void* reserved) {
         JNINativeMethod methods[] = {
             {(char*)"GetFeatureList", (char*)"()Ljava/lang/String;", (void*)GetFeatureList},
             {(char*)"Changes", (char*)"(Ljava/lang/Object;ILjava/lang/String;IJZLjava/lang/String;)V", (void*)Changes},
-            {(char*)"setText", (char*)"(Ljava/lang/Object;Ljava/lang/String;)V", (void*)setText},
             {(char*)"CheckOverlayPermission", (char*)"(Landroid/content/Context;)V", (void*)CheckOverlayPermission}
         };
-        env->RegisterNatives(clazz, methods, sizeof(methods) / sizeof(JNIMethod));
+        env->RegisterNatives(clazz, methods, sizeof(methods) / sizeof(JNINativeMethod));
     }
     return JNI_VERSION_1_6;
 }
