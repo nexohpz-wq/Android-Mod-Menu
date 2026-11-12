@@ -6,12 +6,10 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <cmath>
-
 #include "Includes/Utils.hpp"
 #include "Dobby/dobby.h"
 
-#define LOG_TAG "ESP_NATIVE"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define TAG "ESP_NATIVE"
 
 // ==========================================
 // AQUÍ IRÁN LOS OFFSETS DEL JUEGO
@@ -20,9 +18,6 @@ uintptr_t offset_WorldToScreenPoint = 0x0;
 uintptr_t offset_Camera_get_main = 0x0;
 uintptr_t offset_PlayerMovement_Update = 0x0;
 
-// ==========================================
-// FUNCIONES DE OPENGL (Para dibujar)
-// ==========================================
 typedef EGLBoolean (*eglSwapBuffers_t)(EGLDisplay dpy, EGLSurface surf);
 eglSwapBuffers_t orig_eglSwapBuffers;
 
@@ -42,14 +37,14 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
 void* hack_thread(void*) {
     do { sleep(1); } while (!isLibraryLoaded("libil2cpp.so"));
 
-    LOGI("Juego cargado. Iniciando ESP Nativo...");
+    __android_log_print(ANDROID_LOG_INFO, TAG, "Juego cargado. Iniciando ESP...");
 
     void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
     if (egl_handle) {
         void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
         if (swapFunc) {
             DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
-            LOGI("¡Hook en EGL exitoso! Línea de prueba dibujada.");
+            __android_log_print(ANDROID_LOG_INFO, TAG, "Hook EGL exitoso.");
         }
     }
     return nullptr;
