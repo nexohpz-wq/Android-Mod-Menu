@@ -10,7 +10,7 @@ uintptr_t getLibraryAddress(const char *libraryName) {
         void *handle = xdl_open(libraryName, XDL_DEFAULT);
         memset(&info, 0, sizeof(xdl_info_t));
         if (0 > xdl_info(handle, XDL_DI_DLINFO, &info)) {
-            LOGI(">>> xdl_info(XDL_DI_DLINFO, %llx", (uintptr_t) handle);
+            LOGI(">>> xdl_info(XDL_DI_DLINFO, %lx", (unsigned long) handle);
             xdl_close(handle);
             return 0;
         } else {
@@ -30,7 +30,7 @@ void* getSymAddress(const char *libraryName, const char *SymName, bool relative)
     }
     memset(&info, 0, sizeof(xdl_info_t));
     if (0 > xdl_info(handle, XDL_DI_DLINFO, &info)) {
-        LOGE(">>> getsym_xdl_info(XDL_DI_DLINFO, %llx %s", (uintptr_t) handle, SymName);
+        LOGE(">>> getsym_xdl_info(XDL_DI_DLINFO, %lx %s", (unsigned long) handle, SymName);
     }
     void *symbol_addr = xdl_sym(handle, SymName, nullptr);
     if (symbol_addr == nullptr) {
@@ -96,7 +96,6 @@ bool isLibraryLoaded(const char *libraryName) {
 
 uintptr_t str2offset(const char *c) {
     int base = 16;
-    static_assert(sizeof(uintptr_t) == sizeof(unsigned long) || sizeof(uintptr_t) == sizeof(unsigned long long), "Size mismatch");
     if (sizeof(uintptr_t) == sizeof(unsigned long)) {
         return strtoul(c, nullptr, base);
     }
