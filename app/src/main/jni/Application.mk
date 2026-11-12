@@ -1,7 +1,6 @@
-# To AIDE Users: If you are using 32-bit/ARMv7 phone, please remove arm64-v8a
-APP_ABI := arm64-v8a
-# APP_PLATFORM := android-18 #APP_PLATFORM does not need to be set. It will automatically defaulting
-APP_STL := c++_static
-APP_OPTIM := release
-APP_THIN_ARCHIVE := true
-APP_PIE 		:= true
+LOCAL_PATH := $(call my-dir)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE    := MyLibName
+LOCAL_SRC_FILES := $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/src/*.cpp))
+include $(BUILD_SHARED_LIBRARY)
