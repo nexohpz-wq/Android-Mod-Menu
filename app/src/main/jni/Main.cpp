@@ -1,6 +1,4 @@
 #include <jni.h>
-#include "Includes/Includes.h"
-#include "Includes/Utils.hpp"
 #include "Menu/Menu.h"
 #include <thread>
 #include <chrono>
@@ -8,6 +6,13 @@
 
 #define LOG_TAG "ESP_MOD"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+
+// Simulamos la función isLibraryLoaded para que no dependa de Utils.hpp
+bool isLibraryLoaded(const char* libName) {
+    void* handle = dlopen(libName, RTLD_LAZY);
+    if (handle) { dlclose(handle); return true; }
+    return false;
+}
 
 bool skeleton_esp = true;
 
