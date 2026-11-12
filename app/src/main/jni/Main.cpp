@@ -1,49 +1,19 @@
 #include <jni.h>
-#include "imgui.h"
-#include "imgui_internal.h"
+#include "Includes/Utils.hpp"
+#include "Menu/Menu.h"
 #include <thread>
 #include <chrono>
 #include <android/log.h>
-#include <dlfcn.h>
 
 #define LOG_TAG "ESP_MOD"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
-bool isLibraryLoaded(const char* libName) {
-    void* handle = dlopen(libName, RTLD_LAZY);
-    if (handle) { dlclose(handle); return true; }
-    return false;
-}
-
-bool skeleton_esp = true;
-
-void* esp_thread(void*) {
-    while (true) {
-        if (skeleton_esp) {
-            ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
-            ImVec2 screen = ImGui::GetIO().DisplaySize;
-            draw_list->AddLine(ImVec2(screen.x / 2 - 50, screen.y / 2), ImVec2(screen.x / 2 + 50, screen.y / 2), IM_COL32(255, 0, 0, 255), 3.0f);
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(16)); 
-    }
-    return nullptr;
-}
-
-void* hack_thread(void*) {
+void hack_thread() {
     do { sleep(1); } while (!isLibraryLoaded("libil2cpp.so"));
-    LOGI("Mod Menu y ESP Iniciados");
-    pthread_t pt;
-    pthread_create(&pt, nullptr, esp_thread, nullptr);
-    return nullptr;
-}
-
-void DrawMenu() {
-    ImGui::Checkbox("Skeleton ESP (Test)", &skeleton_esp);
-    ImGui::Text("Linea roja = Dibujo Nativo OK");
+    LOGI("Mod Menu Iniciado");
 }
 
 __attribute__((constructor))
 void lib_main() {
-    pthread_t pt;
-    pthread_create(&pt, nullptr, hack_thread, nullptr);
+    std::thread(hack_thread).detach();
 }
