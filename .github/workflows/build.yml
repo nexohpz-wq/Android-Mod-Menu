@@ -29,4 +29,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ModMenu-Libs
-        path: app/src/main/libs/
+        path: app/src/main/jni/libs/
