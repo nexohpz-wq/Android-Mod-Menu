@@ -44,7 +44,6 @@ void Toast(JNIEnv *env, jobject thiz, const char *text, int length) {
     env->CallVoidMethod(toastobj, methodShow);
 }
 
-//Big letter cause crash
 void setText(JNIEnv *env, jobject obj, const char* text){
     jclass html = (*env).FindClass(OBFUSCATE("android/text/Html"));
     jmethodID fromHtml = (*env).GetStaticMethodID(html, OBFUSCATE("fromHtml"), OBFUSCATE("(Ljava/lang/String;)Landroid/text/Spanned;"));
@@ -102,12 +101,11 @@ void startActivityPermisson(JNIEnv *env, jobject ctx){
     env->CallVoidMethod(ctx, startActivity, intent);
 }
 
-//Needed jclass parameter because this is a static java method
 void CheckOverlayPermission(JNIEnv *env, jclass thiz, jobject ctx){
-    LOGI("%s", OBFUSCATE("Check overlay permission"));
+    LOGI("Check overlay permission");
 
     int sdkVer = get_api_sdk(env);
-    if (sdkVer >= 23) { //Android 6.0
+    if (sdkVer >= 23) { 
         jclass Settings = env->FindClass(OBFUSCATE("android/provider/Settings"));
         jmethodID canDraw =env->GetStaticMethodID(Settings, OBFUSCATE("canDrawOverlays"), OBFUSCATE("(Landroid/content/Context;)Z"));
         if (!env->CallStaticBooleanMethod(Settings, canDraw, ctx)){
@@ -121,6 +119,6 @@ void CheckOverlayPermission(JNIEnv *env, jclass thiz, jobject ctx){
         }
     }
 
-    LOGI("%s", OBFUSCATE("Start service"));
+    LOGI("Start service");
     startService(env, ctx);
 }
