@@ -10,7 +10,7 @@ uintptr_t getLibraryAddress(const char *libraryName) {
         void *handle = xdl_open(libraryName, XDL_DEFAULT);
         memset(&info, 0, sizeof(xdl_info_t));
         if (0 > xdl_info(handle, XDL_DI_DLINFO, &info)) {
-            LOGI("%s %llx", OBFUSCATE(">>> xdl_info(XDL_DI_DLINFO,"), (uintptr_t) handle);
+            LOGI(">>> xdl_info(XDL_DI_DLINFO, %llx", (uintptr_t) handle);
             xdl_close(handle);
             return 0;
         } else {
@@ -25,16 +25,16 @@ void* getSymAddress(const char *libraryName, const char *SymName, bool relative)
     xdl_info_t info;
     void *handle = xdl_open(libraryName, XDL_DEFAULT);
     if (handle == nullptr) {
-        LOGE("%s %s", OBFUSCATE("xdl_open failed for"), libraryName);
+        LOGE("xdl_open failed for %s", libraryName);
         return nullptr;
     }
     memset(&info, 0, sizeof(xdl_info_t));
     if (0 > xdl_info(handle, XDL_DI_DLINFO, &info)) {
-        LOGE("%s %llx %s", OBFUSCATE(">>> getsym_xdl_info(XDL_DI_DLINFO,"), (uintptr_t) handle, SymName);
+        LOGE(">>> getsym_xdl_info(XDL_DI_DLINFO, %llx %s", (uintptr_t) handle, SymName);
     }
     void *symbol_addr = xdl_sym(handle, SymName, nullptr);
     if (symbol_addr == nullptr) {
-        LOGW("%s", OBFUSCATE(">>> !xdl_sym -> xdl_dsym..."));
+        LOGW(">>> !xdl_sym -> xdl_dsym...");
         symbol_addr = xdl_dsym(handle, SymName, nullptr);
     }
     xdl_close(handle);
@@ -61,7 +61,7 @@ std::string getRelativeAddress(const char *libraryName, const char *rootOffset, 
         result = (uintptr_t)getSymAddress(libraryName, rootOffset, true) + offset2;
     }
     std::stringstream ss;
-    ss << OBFUSCATE("0x") << std::hex << std::uppercase << result;
+    ss << "0x" << std::hex << std::uppercase << result;
     return ss.str();
 }
 
@@ -80,7 +80,7 @@ jboolean isGameLibLoaded(JNIEnv *env, jobject thiz) {
 
 bool isLibraryLoaded(const char *libraryName) {
     char line[512] = {0};
-    FILE *fp = fopen(OBFUSCATE("/proc/self/maps"), OBFUSCATE("rt"));
+    FILE *fp = fopen("/proc/self/maps", "rt");
     if (fp != nullptr) {
         while (fgets(line, sizeof(line), fp)) {
             std::string a = line;
@@ -96,7 +96,7 @@ bool isLibraryLoaded(const char *libraryName) {
 
 uintptr_t str2offset(const char *c) {
     int base = 16;
-    static_assert(sizeof(uintptr_t) == sizeof(unsigned long) || sizeof(uintptr_t) == sizeof(unsigned long long));
+    static_assert(sizeof(uintptr_t) == sizeof(unsigned long) || sizeof(uintptr_t) == sizeof(unsigned long long), "Size mismatch");
     if (sizeof(uintptr_t) == sizeof(unsigned long)) {
         return strtoul(c, nullptr, base);
     }
