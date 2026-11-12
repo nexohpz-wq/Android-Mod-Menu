@@ -7,13 +7,14 @@
 #include "Includes/Logger.h"
 #include "Includes/Utils.hpp"
 
-extern "C" JNIEXPORT jstring JNICALL Java_com_android_support_Launcher_GetFeatureList(JNIEnv *env, jclass clazz) {
+// 1. Declaramos las funciones con los nombres cortos
+jstring GetFeatureList(JNIEnv *env, jobject thiz) {
     return env->NewStringUTF("Skeleton ESP");
 }
 
-extern "C" JNIEXPORT void JNICALL Java_com_android_support_Launcher_Changes(JNIEnv *env, jclass clazz, jobject obj, jint feature, jstring value, jint type, jlong longValue, jboolean boolValue, jstring stringValue) {}
+void Changes(JNIEnv *env, jclass clazz, jobject obj, jint feature, jstring value, jint type, jlong longValue, jboolean boolValue, jstring stringValue) {}
 
-extern "C" JNIEXPORT void JNICALL Java_com_android_support_Launcher_CheckOverlayPermission(JNIEnv *env, jclass thiz, jobject ctx) {
+void CheckOverlayPermission(JNIEnv *env, jclass thiz, jobject ctx) {
     LOGI("Check overlay permission");
     jclass native_context = env->GetObjectClass(ctx);
     jmethodID startServiceMethod = env->GetMethodID(native_context, "startService", "(Landroid/content/Intent;)Landroid/content/ComponentName;");
@@ -24,6 +25,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_android_support_Launcher_CheckOverlay
     env->CallObjectMethod(ctx, startServiceMethod, intent);
 }
 
+// 2. Las registramos con JNI_OnLoad usando sus nombres cortos
 extern "C" jint JNI_OnLoad(JavaVM* vm, void* reserved) {
     JNIEnv* env;
     if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) return -1;
@@ -34,7 +36,7 @@ extern "C" jint JNI_OnLoad(JavaVM* vm, void* reserved) {
             {(char*)"Changes", (char*)"(Ljava/lang/Object;ILjava/lang/String;IJZLjava/lang/String;)V", (void*)Changes},
             {(char*)"CheckOverlayPermission", (char*)"(Landroid/content/Context;)V", (void*)CheckOverlayPermission}
         };
-        env->RegisterNatives(clazz, methods, sizeof(methods) / sizeof(JNINativeMethod));
+        env->RegisterNatives(clazz, methods, sizeof(methods) / sizeof(methods[0]));
     }
     return JNI_VERSION_1_6;
 }
