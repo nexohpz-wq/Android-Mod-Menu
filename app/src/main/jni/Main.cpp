@@ -7,15 +7,15 @@
 #define LOG_TAG "ESP_MOD"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
-bool isLibraryLoaded(const char* libName) {
+// Renombrado para no chocar con Utils.cpp
+bool checkLib(const char* libName) {
     void* handle = dlopen(libName, RTLD_LAZY);
     if (handle) { dlclose(handle); return true; }
     return false;
 }
 
 void hack_thread() {
-    // Espera a que el juego cargue su motor
-    while (!isLibraryLoaded("libil2cpp.so")) {
+    while (!checkLib("libil2cpp.so")) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
     LOGI("Mod Menu Iniciado");
