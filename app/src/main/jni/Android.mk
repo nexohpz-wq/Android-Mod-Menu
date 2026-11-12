@@ -3,7 +3,6 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 LOCAL_MODULE    := MyLibName
 
-# Compilamos nuestro código y el código fuente de Dobby
 LOCAL_SRC_FILES := Main.cpp \
                    Includes/Utils.cpp \
                    xDL/xdl.c \
