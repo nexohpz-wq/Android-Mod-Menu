@@ -6,6 +6,8 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 
 // --- LIBRERÍA DOBBY PARA HOOKEAR ---
 #include "Dobby/dobby.h"
@@ -15,11 +17,28 @@
 
 // ==========================================
 // AQUÍ IRÁN LOS OFFSETS DEL JUEGO
-// (Tendremos que sacarlos con GameGuardian)
 // ==========================================
 uintptr_t offset_WorldToScreenPoint = 0x0;
 uintptr_t offset_Camera_get_main = 0x0;
 uintptr_t offset_PlayerMovement_Update = 0x0;
+
+// ==========================================
+// FUNCIÓN PARA ESPERAR AL JUEGO
+// ==========================================
+bool isLibraryLoaded(const char* libraryName) {
+    char line[512] = {0};
+    FILE *fp = fopen("/proc/self/maps", "rt");
+    if (fp != nullptr) {
+        while (fgets(line, sizeof(line), fp)) {
+            if (strstr(line, libraryName)) {
+                fclose(fp);
+                return true;
+            }
+        }
+        fclose(fp);
+    }
+    return false;
+}
 
 // ==========================================
 // FUNCIONES DE OPENGL (Para dibujar)
@@ -38,8 +57,7 @@ void DrawLine(float x1, float y1, float x2, float y2, float width) {
 
 // Hook a eglSwapBuffers (se ejecuta cada frame)
 EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
-    // Aquí dibujamos sobre la pantalla del juego
-    // Por ahora dibujamos una línea de prueba en el centro
+    // Dibujamos una línea de prueba (de X=100,Y=100 a X=500,Y=500)
     DrawLine(100.0f, 100.0f, 500.0f, 500.0f, 3.0f);
     
     return orig_eglSwapBuffers(dpy, surf);
