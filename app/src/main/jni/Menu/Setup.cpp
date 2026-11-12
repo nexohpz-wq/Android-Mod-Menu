@@ -1,5 +1,3 @@
-#include "Setup.hpp"
-#include "../Includes/Utils.hpp"
-#include <jni.h>
-
-void InitMenu() {}
+void InitMenu() {
+    // Vacío por ahora. No necesitamos cabeceras.
+}
