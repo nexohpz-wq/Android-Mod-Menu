@@ -40,7 +40,11 @@ void (*glGenVertexArraysOES)(GLsizei, GLuint*) = nullptr;
 void (*glBindVertexArrayOES)(GLuint) = nullptr;
 
 void hook_PM_Update(void* instance) {
-    if (instance) active_players.insert(instance);
+    if (instance && active_players.size() < 100) {
+        if (active_players.insert(instance).second) {
+            LOGI("Jugador detectado y guardado: %p", instance);
+        }
+    }
     if (orig_PM_Update) orig_PM_Update(instance);
 }
 
@@ -70,6 +74,11 @@ void DrawBox(float sx, float sy, float w, float h, float sw, float sh) {
 }
 
 EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
+    static int frameCount = 0;
+    if (frameCount++ % 60 == 0) {
+        LOGI("hook_eglSwapBuffers disparandose. Jugadores: %zu", active_players.size());
+    }
+
     if (!shaderInitialized) {
         shaderProgram = CreateShaderProgram();
         positionLoc = glGetAttribLocation(shaderProgram, "vPosition");
@@ -89,12 +98,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
             glDisable(GL_SCISSOR_TEST); glDisable(GL_DEPTH_TEST); glDisable(GL_STENCIL_TEST);
             glUseProgram(shaderProgram);
             if (glBindVertexArrayOES) glBindVertexArrayOES(vao);
-
-            // Loguear jugadores
-            static int frameCount = 0;
-            if (frameCount++ % 120 == 0) {
-                LOGI("Jugadores detectados: %zu", active_players.size());
-            }
 
             for (void* player : active_players) {
                 void* trans = Component_get_transform(player);
@@ -120,27 +123,42 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
 }
 
 void* hack_thread(void*) {
+    LOGI("hack_thread iniciado");
     do { sleep(1); } while (!isLibraryLoaded("libil2cpp.so"));
+    LOGI("libil2cpp.so cargado");
+    
     uintptr_t base = getLibraryAddress("libil2cpp.so");
-    Camera_get_main = (void*(*)())(base + offset_Camera_main);
-    Camera_WorldToScreenPoint = (Vector3(*)(void*, Vector3, int))(base + offset_W2S);
-    Component_get_transform = (void*(*)(void*))(base + offset_Component_transform);
-    Transform_get_position = (Vector3(*)(void*))(base + offset_Transform_pos);
-    void* pmUpdate = (void*)(base + offset_PM_Update);
-    if (pmUpdate) DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
-    void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
-    if (egl_handle) {
-        void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
-        if (swapFunc) DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
+    LOGI("Base libil2cpp: 0x%lx", (unsigned long)base);
+    
+    if (base != 0) {
+        Camera_get_main = (void*(*)())(base + offset_Camera_main);
+        Camera_WorldToScreenPoint = (Vector3(*)(void*, Vector3, int))(base + offset_W2S);
+        Component_get_transform = (void*(*)(void*))(base + offset_Component_transform);
+        Transform_get_position = (Vector3(*)(void*))(base + offset_Transform_pos);
+        LOGI("Funciones resueltas. Cam: %p", Camera_get_main);
+        
+        void* pmUpdate = (void*)(base + offset_PM_Update);
+        int res1 = DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
+        LOGI("Hook PM_Update res: %d", res1);
+        
+        void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
+        if (egl_handle) {
+            void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
+            if (swapFunc) {
+                int res2 = DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
+                LOGI("Hook eglSwapBuffers res: %d", res2);
+            } else {
+                LOGI("No se encontro eglSwapBuffers");
+            }
+        } else {
+            LOGI("No se pudo abrir libEGL.so");
+        }
     }
     return nullptr;
 }
 
 extern "C" void StartESP() {
-    // Escribir archivo de prueba para saber si Frida llamó a esta función
-    FILE *f = fopen("/data/local/tmp/esp_encendido.txt", "w");
-    if (f) { fprintf(f, "StartESP fue llamada!\n"); fclose(f); }
-
+    LOGI("StartESP llamado desde Frida");
     pthread_t pt; 
     pthread_create(&pt, nullptr, hack_thread, nullptr); 
     pthread_detach(pt);
@@ -148,6 +166,6 @@ extern "C" void StartESP() {
 
 __attribute__((constructor))
 void lib_main() {
-    // Por si el constructor funciona en Zygisk
+    LOGI("lib_main ejecutado");
     StartESP();
 }
