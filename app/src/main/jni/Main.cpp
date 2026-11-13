@@ -13,7 +13,6 @@
 #include "dobby.h"
 
 #define LOG_TAG "ESP_REAL"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 struct Vector3 { float x, y, z; };
 
@@ -144,13 +143,15 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
 void* hack_thread(void*) {
     do { sleep(1); } while (!isLibraryLoaded("libil2cpp.so"));
 
-    // CORREGIDO: getAbsAddress en lugar de getAbsoluteAddress
-    Camera_get_main = (void*(*)())getAbsAddress("libil2cpp.so", offset_Camera_main);
-    Camera_WorldToScreenPoint = (Vector3(*)(void*, Vector3, int))getAbsAddress("libil2cpp.so", offset_W2S);
-    Component_get_transform = (void*(*)(void*))getAbsAddress("libil2cpp.so", offset_Component_transform);
-    Transform_get_position = (Vector3(*)(void*))getAbsAddress("libil2cpp.so", offset_Transform_pos);
+    // La suma manual de la base + el offset (Método infalible)
+    uintptr_t base = getLibraryAddress("libil2cpp.so");
+    
+    Camera_get_main = (void*(*)())(base + offset_Camera_main);
+    Camera_WorldToScreenPoint = (Vector3(*)(void*, Vector3, int))(base + offset_W2S);
+    Component_get_transform = (void*(*)(void*))(base + offset_Component_transform);
+    Transform_get_position = (Vector3(*)(void*))(base + offset_Transform_pos);
 
-    void* pmUpdate = getAbsAddress("libil2cpp.so", offset_PM_Update);
+    void* pmUpdate = (void*)(base + offset_PM_Update);
     
     if (pmUpdate) DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
 
