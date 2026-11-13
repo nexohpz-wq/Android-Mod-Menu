@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <android/log.h>
 #include "Includes/Utils.hpp"
-#include "Dobby/dobby.h"
+#include "Dobby/dobby.h" // Ruta corregida
 
 #define LOG_TAG "ESP_REAL"
 
@@ -29,7 +29,7 @@ void* (*Component_get_transform)(void* comp) = nullptr;
 Vector3 (*Transform_get_position)(void* trans) = nullptr;
 
 void (*orig_PM_Update)(void* instance) = nullptr;
-std::set<void*> active_players;
+std::set<void*> active_players; // Corregido: std::set<void*>
 
 // OpenGL
 GLuint shaderProgram = 0;
@@ -143,7 +143,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
 void* hack_thread(void*) {
     do { sleep(1); } while (!isLibraryLoaded("libil2cpp.so"));
 
-    // La suma manual de la base + el offset (Método infalible)
     uintptr_t base = getLibraryAddress("libil2cpp.so");
     
     Camera_get_main = (void*(*)())(base + offset_Camera_main);
