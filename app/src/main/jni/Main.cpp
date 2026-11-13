@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <android/log.h>
 #include "Includes/Utils.hpp"
-#include "Dobby/dobby.h" // Ruta corregida
+#include "Dobby/dobby.h"
 
 #define LOG_TAG "ESP_REAL"
 
@@ -29,7 +29,7 @@ void* (*Component_get_transform)(void* comp) = nullptr;
 Vector3 (*Transform_get_position)(void* trans) = nullptr;
 
 void (*orig_PM_Update)(void* instance) = nullptr;
-std::set<void*> active_players; // Corregido: std::set<void*>
+std::set<void*> active_players; 
 
 // OpenGL
 GLuint shaderProgram = 0;
@@ -49,7 +49,7 @@ eglSwapBuffers_t orig_eglSwapBuffers = nullptr;
 
 GLuint CreateShaderProgram() {
     const char* vSource = "attribute vec4 vPosition; void main() { gl_Position = vPosition; }";
-    const char* fSource = "precision mediump float; void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }"; // Rojo
+    const char* fSource = "precision mediump float; void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }"; // Cajas Rojas
     
     GLuint vShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vShader, 1, &vSource, NULL); glCompileShader(vShader);
@@ -117,20 +117,25 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
 
                 Vector3 pos = Transform_get_position(trans);
                 Vector3 headPos = pos;
-                headPos.y += 1.7f;
+                headPos.y += 1.75f; // Altura de la cabeza
 
                 Vector3 screenHead = Camera_WorldToScreenPoint(cam, headPos, 0);
                 Vector3 screenFeet = Camera_WorldToScreenPoint(cam, pos, 0);
 
                 if (screenHead.z > 0 && screenFeet.z > 0) { 
-                    float topY = std::min(screenHead.y, screenFeet.y);
-                    float bottomY = std::max(screenHead.y, screenFeet.y);
-                    float boxHeight = bottomY - topY;
+                    // CORRECCIÓN MATEMÁTICA: 
+                    // En Unity, Y=0 está abajo. Si la cabeza está arriba, su Y es mayor.
+                    float topY = std::max(screenHead.y, screenFeet.y);    // Punto más alto en pantalla
+                    float bottomY = std::min(screenHead.y, screenFeet.y); // Punto más bajo en pantalla
                     
-                    float boxWidth = boxHeight * 0.45f; 
+                    float boxHeight = topY - bottomY;
+                    float boxWidth = boxHeight * 0.45f; // Ancho proporcional al cuerpo
                     
+                    // Coordenada X centrada en el jugador
                     float x = screenHead.x - (boxWidth / 2);
-                    float sy = sh - bottomY;
+                    
+                    // Convertir a coordenadas de pantalla de OpenGL (0 está arriba)
+                    float sy = sh - topY;
 
                     DrawBox(x, sy, boxWidth, boxHeight, sw, sh);
                 }
