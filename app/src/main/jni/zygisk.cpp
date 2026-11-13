@@ -15,8 +15,8 @@ public:
         const char *process = env->GetStringUTFChars(args->nice_name, nullptr);
         if (process) {
             if (strcmp(process, "com.ScarletWork.CounterFlame") == 0) {
-                // Inyecta tu librería ESP desde la carpeta del módulo
-                void *handle = dlopen("/data/adb/modules/cf_esp/lib/arm64-v8a/libMyLibName.so", RTLD_NOW);
+                // RUTA CORREGIDA: Ahora busca en la carpeta privada del juego
+                void *handle = dlopen("/data/data/com.ScarletWork.CounterFlame/files/libMyLibName.so", RTLD_NOW);
                 if (handle) {
                     __android_log_print(ANDROID_LOG_INFO, "ZYGISK_ESP", "ESP inyectado con exito en CounterFlame");
                 } else {
