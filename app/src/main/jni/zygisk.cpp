@@ -2,39 +2,25 @@
 #include <dlfcn.h>
 #include <android/log.h>
 #include <cstring>
-#include <cstdio>
 #include "zygisk.hpp"
-
-#define LOG_TAG "ZYGISK_TEST"
 
 class CF_ESP : public zygisk::ModuleBase {
 public:
     void onLoad(zygisk::Api *api, JNIEnv *env) override {
         this->api = api;
         this->env = env;
-        __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "onLoad ejecutado!");
     }
 
-    void postAppSpecialize(const zygisk::AppSpecializeArgs *args) override {
+    void preAppSpecialize(zygisk::AppSpecializeArgs *args) override {
         const char *process = env->GetStringUTFChars(args->nice_name, nullptr);
         if (process) {
-            __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "PostApp: %s", process);
-            
-            // Intentar crear el archivo de prueba
-            FILE *f = fopen("/data/data/com.ScarletWork.CounterFlame/files/zygisk_proof.txt", "w");
-            if (f) {
-                fprintf(f, "Proceso: %s\n", process);
-                fclose(f);
-            }
-
-            // Si el proceso es el juego, intentamos inyectar
-            if (strstr(process, "CounterFlame")) {
-                __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "Inyectando ESP...");
-                void *handle = dlopen("/data/data/com.ScarletWork.CounterFlame/files/libMyLibName.so", RTLD_NOW);
+            if (strcmp(process, "com.ScarletWork.CounterFlame") == 0) {
+                // Cargamos desde la carpeta del módulo de Magisk
+                void *handle = dlopen("/data/adb/modules/cf_esp/lib/arm64-v8a/libMyLibName.so", RTLD_NOW);
                 if (handle) {
-                    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "ESP CARGADO EXITOSAMENTE");
+                    __android_log_print(ANDROID_LOG_INFO, "ZYGISK_ESP", "ESP inyectado en preAppSpecialize.");
                 } else {
-                    __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, "FALLO AL CARGAR: %s", dlerror());
+                    __android_log_print(ANDROID_LOG_ERROR, "ZYGISK_ESP", "Fallo al inyectar: %s", dlerror());
                 }
             }
             env->ReleaseStringUTFChars(args->nice_name, process);
