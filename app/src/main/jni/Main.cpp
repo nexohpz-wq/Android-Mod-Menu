@@ -63,21 +63,20 @@ GLuint CreateShaderProgram() {
 }
 
 void DrawBox(float sx, float sy, float w, float h, float sw, float sh) {
-    // Convertir coordenadas de pantalla a NDC (-1 a 1)
     auto toNDC = [](float x, float y, float scrW, float scrH) {
         return std::make_pair((x / scrW) * 2.0f - 1.0f, 1.0f - (y / scrH) * 2.0f);
     };
 
-    auto p1 = toNDC(sx, sy, sw, sh);           // Arriba-Izquierda
-    auto p2 = toNDC(sx + w, sy, sw, sh);       // Arriba-Derecha
-    auto p3 = toNDC(sx, sy + h, sw, sh);       // Abajo-Izquierda
-    auto p4 = toNDC(sx + w, sy + h, sw, sh);   // Abajo-Derecha
+    auto p1 = toNDC(sx, sy, sw, sh);
+    auto p2 = toNDC(sx + w, sy, sw, sh);
+    auto p3 = toNDC(sx, sy + h, sw, sh);
+    auto p4 = toNDC(sx + w, sy + h, sw, sh);
 
     GLfloat vertices[] = {
-        p1.first, p1.second, p2.first, p2.second, // Línea superior
-        p1.first, p1.second, p3.first, p3.second, // Línea izquierda
-        p2.first, p2.second, p4.first, p4.second, // Línea derecha
-        p3.first, p3.second, p4.first, p4.second  // Línea inferior
+        p1.first, p1.second, p2.first, p2.second,
+        p1.first, p1.second, p3.first, p3.second,
+        p2.first, p2.second, p4.first, p4.second,
+        p3.first, p3.second, p4.first, p4.second
     };
 
     glVertexAttribPointer(positionLoc, 2, GL_FLOAT, GL_FALSE, 0, vertices);
@@ -106,7 +105,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
             float sw = viewport[2];
             float sh = viewport[3];
 
-            // Preparar el estado de OpenGL para dibujar sobre el juego
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glDisable(GL_SCISSOR_TEST);
             glDisable(GL_DEPTH_TEST);
@@ -120,22 +118,20 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
 
                 Vector3 pos = Transform_get_position(trans);
                 Vector3 headPos = pos;
-                headPos.y += 1.7f; // Altura de la cabeza
+                headPos.y += 1.7f;
 
                 Vector3 screenHead = Camera_WorldToScreenPoint(cam, headPos, 0);
                 Vector3 screenFeet = Camera_WorldToScreenPoint(cam, pos, 0);
 
-                // Verificar si está al frente de la cámara
                 if (screenHead.z > 0 && screenFeet.z > 0) { 
                     float topY = std::min(screenHead.y, screenFeet.y);
                     float bottomY = std::max(screenHead.y, screenFeet.y);
                     float boxHeight = bottomY - topY;
                     
-                    // Proporción del ancho de la caja
                     float boxWidth = boxHeight * 0.45f; 
                     
                     float x = screenHead.x - (boxWidth / 2);
-                    float sy = sh - bottomY; // Invertir Y para OpenGL
+                    float sy = sh - bottomY;
 
                     DrawBox(x, sy, boxWidth, boxHeight, sw, sh);
                 }
@@ -148,12 +144,14 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
 void* hack_thread(void*) {
     do { sleep(1); } while (!isLibraryLoaded("libil2cpp.so"));
 
-    Camera_get_main = (void*(*)())getAbsoluteAddress("libil2cpp.so", offset_Camera_main);
-    Camera_WorldToScreenPoint = (Vector3(*)(void*, Vector3, int))getAbsoluteAddress("libil2cpp.so", offset_W2S);
-    Component_get_transform = (void*(*)(void*))getAbsoluteAddress("libil2cpp.so", offset_Component_transform);
-    Transform_get_position = (Vector3(*)(void*))getAbsoluteAddress("libil2cpp.so", offset_Transform_pos);
+    // CORREGIDO: getAbsAddress en lugar de getAbsoluteAddress
+    Camera_get_main = (void*(*)())getAbsAddress("libil2cpp.so", offset_Camera_main);
+    Camera_WorldToScreenPoint = (Vector3(*)(void*, Vector3, int))getAbsAddress("libil2cpp.so", offset_W2S);
+    Component_get_transform = (void*(*)(void*))getAbsAddress("libil2cpp.so", offset_Component_transform);
+    Transform_get_position = (Vector3(*)(void*))getAbsAddress("libil2cpp.so", offset_Transform_pos);
 
-    void* pmUpdate = getAbsoluteAddress("libil2cpp.so", offset_PM_Update);
+    void* pmUpdate = getAbsAddress("libil2cpp.so", offset_PM_Update);
+    
     if (pmUpdate) DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
 
     void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
