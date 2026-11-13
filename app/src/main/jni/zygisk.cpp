@@ -12,24 +12,37 @@ public:
         this->env = env;
     }
 
+    void preAppSpecialize(zygisk::AppSpecializeArgs *args) override {
+        // En preAppSpecialize somos root, podemos escribir en /data/local/tmp sin problemas
+        const char *process = env->GetStringUTFChars(args->nice_name, nullptr);
+        if (process) {
+            FILE *f = fopen("/data/local/tmp/zygisk_pre.txt", "a");
+            if (f) {
+                fprintf(f, "PreApp: %s\n", process);
+                fclose(f);
+            }
+            env->ReleaseStringUTFChars(args->nice_name, process);
+        }
+    }
+
     void postAppSpecialize(const zygisk::AppSpecializeArgs *args) override {
         const char *process = env->GetStringUTFChars(args->nice_name, nullptr);
         if (process) {
-            if (strcmp(process, "com.ScarletWork.CounterFlame") == 0) {
-                // Escribimos el log en la carpeta privada del juego
-                FILE *f = fopen("/data/data/com.ScarletWork.CounterFlame/files/zygisk_log.txt", "w");
-                if (f) {
-                    fprintf(f, "Iniciando inyeccion...\n");
-                    // Intentamos cargar el ESP
+            // Escribimos en la carpeta del juego sin importar qué juego sea, para ver si tenemos permiso
+            FILE *f = fopen("/data/data/com.ScarletWork.CounterFlame/files/post_debug.txt", "a");
+            if (f) {
+                fprintf(f, "PostApp: %s\n", process);
+                // Si el proceso es el de nuestro juego, intentamos inyectar
+                if (strstr(process, "CounterFlame")) {
+                    fprintf(f, "Encontrado CounterFlame! Intentando cargar ESP...\n");
                     void *handle = dlopen("/data/data/com.ScarletWork.CounterFlame/files/libMyLibName.so", RTLD_NOW);
                     if (handle) {
-                        fprintf(f, "EXITO: ESP inyectado.\n");
+                        fprintf(f, "EXITO: ESP cargado en memoria!\n");
                     } else {
-                        const char *err = dlerror();
-                        fprintf(f, "ERROR: %s\n", err ? err : "Desconocido");
+                        fprintf(f, "ERROR al cargar ESP: %s\n", dlerror());
                     }
-                    fclose(f);
                 }
+                fclose(f);
             }
             env->ReleaseStringUTFChars(args->nice_name, process);
         }
