@@ -8,17 +8,15 @@
 #include <cmath>
 #include <set>
 #include <algorithm>
-#include <cstdio> // Para FILE y fopen
 #include <android/log.h>
 #include "Includes/Utils.hpp"
 #include "Dobby/dobby.h"
 
-#define LOG_TAG "ESP_DEBUG"
+#define LOG_TAG "ESP_REAL"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 struct Vector3 { float x, y, z; };
 
-// TUS OFFSETS EXACTOS
 uintptr_t offset_PM_Update = 0x29aa3d8;
 uintptr_t offset_Camera_main = 0x2b55a10;
 uintptr_t offset_W2S = 0x2b55654;
@@ -50,7 +48,8 @@ eglSwapBuffers_t orig_eglSwapBuffers = nullptr;
 
 GLuint CreateShaderProgram() {
     const char* vSource = "attribute vec4 vPosition; void main() { gl_Position = vPosition; }";
-    const char* fSource = "precision mediump float; void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }";
+    const char* fSource = "precision mediump float; void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }"; // Rojo
+    
     GLuint vShader = glCreateShader(GL_VERTEX_SHADER); glShaderSource(vShader, 1, &vSource, NULL); glCompileShader(vShader);
     GLuint fShader = glCreateShader(GL_FRAGMENT_SHADER); glShaderSource(fShader, 1, &fSource, NULL); glCompileShader(fShader);
     GLuint program = glCreateProgram(); glAttachShader(program, vShader); glAttachShader(program, fShader); glLinkProgram(program);
@@ -90,21 +89,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
             glDisable(GL_SCISSOR_TEST); glDisable(GL_DEPTH_TEST); glDisable(GL_STENCIL_TEST);
             glUseProgram(shaderProgram);
             if (glBindVertexArrayOES) glBindVertexArrayOES(vao);
-
-            static int frameCount = 0;
-            if (frameCount++ % 120 == 0) {
-                LOGI("Jugadores detectados: %zu", active_players.size());
-                if (!active_players.empty()) {
-                    void* player = *active_players.begin();
-                    void* trans = Component_get_transform(player);
-                    if (trans) {
-                        Vector3 pos = Transform_get_position(trans);
-                        LOGI("Posición Jugador 1: X=%.2f Y=%.2f Z=%.2f", pos.x, pos.y, pos.z);
-                    } else {
-                        LOGI("Error: Transform es NULL (offset mal)");
-                    }
-                }
-            }
 
             for (void* player : active_players) {
                 void* trans = Component_get_transform(player);
@@ -148,14 +132,5 @@ void* hack_thread(void*) {
 
 __attribute__((constructor))
 void lib_main() {
-    // Escribir archivo para saber si Zygisk cargó esto
-    FILE *f = fopen("/data/data/com.ScarletWork.CounterFlame/files/esp_started.txt", "w");
-    if (f) {
-        fprintf(f, "lib_main ejecutado! El ESP está en memoria.\n");
-        fclose(f);
-    }
-
-    pthread_t pt;
-    pthread_create(&pt, nullptr, hack_thread, nullptr);
-    pthread_detach(pt);
+    pthread_t pt; pthread_create(&pt, nullptr, hack_thread, nullptr); pthread_detach(pt);
 }
