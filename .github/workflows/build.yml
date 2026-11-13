@@ -20,11 +20,6 @@ jobs:
         ndk-version: r25c
         add-to-path: true
 
-    - name: Clone Dobby
-      run: |
-        rm -rf app/src/main/jni/Dobby
-        git clone https://github.com/jmpews/Dobby.git app/src/main/jni/Dobby
-
     - name: Build with ndk-build
       working-directory: ./app/src/main/jni
       run: |
