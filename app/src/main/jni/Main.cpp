@@ -14,7 +14,6 @@
 #include "Dobby/dobby.h"
 
 #define LOG_TAG "ESP_REAL"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 struct Vector3 { float x, y, z; };
 
@@ -39,10 +38,16 @@ bool shaderInitialized = false;
 void (*glGenVertexArraysOES)(GLsizei, GLuint*) = nullptr;
 void (*glBindVertexArrayOES)(GLuint) = nullptr;
 
+// Función para escribir archivo
+void WriteLog(const char* msg) {
+    FILE *f = fopen("/data/local/tmp/esp_debug.txt", "a");
+    if (f) { fprintf(f, "%s\n", msg); fclose(f); }
+}
+
 void hook_PM_Update(void* instance) {
     if (instance && active_players.size() < 100) {
         if (active_players.insert(instance).second) {
-            LOGI("Jugador detectado y guardado: %p", instance);
+            WriteLog("Jugador detectado y guardado.");
         }
     }
     if (orig_PM_Update) orig_PM_Update(instance);
@@ -76,7 +81,9 @@ void DrawBox(float sx, float sy, float w, float h, float sw, float sh) {
 EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
     static int frameCount = 0;
     if (frameCount++ % 60 == 0) {
-        LOGI("hook_eglSwapBuffers disparandose. Jugadores: %zu", active_players.size());
+        char buf[128];
+        sprintf(buf, "hook_eglSwapBuffers disparandose. Jugadores: %zu", active_players.size());
+        WriteLog(buf);
     }
 
     if (!shaderInitialized) {
@@ -86,6 +93,7 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
         glBindVertexArrayOES = (void(*)(GLuint))eglGetProcAddress("glBindVertexArrayOES");
         if (glGenVertexArraysOES) glGenVertexArraysOES(1, &vao);
         shaderInitialized = true;
+        WriteLog("Shader inicializado.");
     }
 
     if (shaderInitialized && Camera_get_main && Camera_WorldToScreenPoint) {
@@ -123,42 +131,37 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
 }
 
 void* hack_thread(void*) {
-    LOGI("hack_thread iniciado");
+    WriteLog("hack_thread iniciado");
     do { sleep(1); } while (!isLibraryLoaded("libil2cpp.so"));
-    LOGI("libil2cpp.so cargado");
+    WriteLog("libil2cpp.so cargado");
     
     uintptr_t base = getLibraryAddress("libil2cpp.so");
-    LOGI("Base libil2cpp: 0x%lx", (unsigned long)base);
-    
     if (base != 0) {
         Camera_get_main = (void*(*)())(base + offset_Camera_main);
         Camera_WorldToScreenPoint = (Vector3(*)(void*, Vector3, int))(base + offset_W2S);
         Component_get_transform = (void*(*)(void*))(base + offset_Component_transform);
         Transform_get_position = (Vector3(*)(void*))(base + offset_Transform_pos);
-        LOGI("Funciones resueltas. Cam: %p", Camera_get_main);
         
         void* pmUpdate = (void*)(base + offset_PM_Update);
         int res1 = DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
-        LOGI("Hook PM_Update res: %d", res1);
+        char buf[64]; sprintf(buf, "Hook PM_Update res: %d", res1);
+        WriteLog(buf);
         
         void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
         if (egl_handle) {
             void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
             if (swapFunc) {
                 int res2 = DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
-                LOGI("Hook eglSwapBuffers res: %d", res2);
-            } else {
-                LOGI("No se encontro eglSwapBuffers");
+                sprintf(buf, "Hook eglSwapBuffers res: %d", res2);
+                WriteLog(buf);
             }
-        } else {
-            LOGI("No se pudo abrir libEGL.so");
         }
     }
     return nullptr;
 }
 
 extern "C" void StartESP() {
-    LOGI("StartESP llamado desde Frida");
+    WriteLog("StartESP llamado desde Frida");
     pthread_t pt; 
     pthread_create(&pt, nullptr, hack_thread, nullptr); 
     pthread_detach(pt);
@@ -166,6 +169,5 @@ extern "C" void StartESP() {
 
 __attribute__((constructor))
 void lib_main() {
-    LOGI("lib_main ejecutado");
     StartESP();
 }
