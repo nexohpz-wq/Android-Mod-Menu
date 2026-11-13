@@ -8,6 +8,7 @@
 #include <cmath>
 #include <set>
 #include <algorithm>
+#include <cstdio>
 #include <android/log.h>
 #include "Includes/Utils.hpp"
 #include "Dobby/dobby.h"
@@ -48,8 +49,7 @@ eglSwapBuffers_t orig_eglSwapBuffers = nullptr;
 
 GLuint CreateShaderProgram() {
     const char* vSource = "attribute vec4 vPosition; void main() { gl_Position = vPosition; }";
-    const char* fSource = "precision mediump float; void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }"; // Rojo
-    
+    const char* fSource = "precision mediump float; void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }";
     GLuint vShader = glCreateShader(GL_VERTEX_SHADER); glShaderSource(vShader, 1, &vSource, NULL); glCompileShader(vShader);
     GLuint fShader = glCreateShader(GL_FRAGMENT_SHADER); glShaderSource(fShader, 1, &fSource, NULL); glCompileShader(fShader);
     GLuint program = glCreateProgram(); glAttachShader(program, vShader); glAttachShader(program, fShader); glLinkProgram(program);
@@ -89,6 +89,12 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
             glDisable(GL_SCISSOR_TEST); glDisable(GL_DEPTH_TEST); glDisable(GL_STENCIL_TEST);
             glUseProgram(shaderProgram);
             if (glBindVertexArrayOES) glBindVertexArrayOES(vao);
+
+            // Loguear jugadores
+            static int frameCount = 0;
+            if (frameCount++ % 120 == 0) {
+                LOGI("Jugadores detectados: %zu", active_players.size());
+            }
 
             for (void* player : active_players) {
                 void* trans = Component_get_transform(player);
@@ -130,7 +136,18 @@ void* hack_thread(void*) {
     return nullptr;
 }
 
+extern "C" void StartESP() {
+    // Escribir archivo de prueba para saber si Frida llamó a esta función
+    FILE *f = fopen("/data/local/tmp/esp_encendido.txt", "w");
+    if (f) { fprintf(f, "StartESP fue llamada!\n"); fclose(f); }
+
+    pthread_t pt; 
+    pthread_create(&pt, nullptr, hack_thread, nullptr); 
+    pthread_detach(pt);
+}
+
 __attribute__((constructor))
 void lib_main() {
-    pthread_t pt; pthread_create(&pt, nullptr, hack_thread, nullptr); pthread_detach(pt);
+    // Por si el constructor funciona en Zygisk
+    StartESP();
 }
