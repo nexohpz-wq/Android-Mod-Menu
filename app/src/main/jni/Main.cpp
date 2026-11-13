@@ -6,17 +6,15 @@
 #include <unistd.h>
 #include <cmath>
 #include <set>
-#include <algorithm> // Para std::min y std::max
+#include <algorithm>
 #include <android/log.h>
 #include "Includes/Utils.hpp"
 #include "dobby.h"
 
 #define LOG_TAG "ESP_NATIVE"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 struct Vector3 { float x, y, z; };
 
-// Tus offsets exactos extraídos de la memoria
 uintptr_t offset_PM_Update = 0x29aa3d8;
 uintptr_t offset_Camera_main = 0x2b55a10;
 uintptr_t offset_W2S = 0x2b55654;
@@ -31,6 +29,10 @@ Vector3 (*Transform_get_position)(void* trans) = nullptr;
 void (*orig_PM_Update)(void* instance) = nullptr;
 std::set<void*> active_players;
 
+GLuint shaderProgram = 0;
+GLint positionLoc = -1;
+bool shaderInitialized = false;
+
 void hook_PM_Update(void* instance) {
     if (instance) active_players.insert(instance);
     if (orig_PM_Update) orig_PM_Update(instance);
@@ -39,25 +41,67 @@ void hook_PM_Update(void* instance) {
 typedef EGLBoolean (*eglSwapBuffers_t)(EGLDisplay dpy, EGLSurface surf);
 eglSwapBuffers_t orig_eglSwapBuffers = nullptr;
 
-void DrawBox(float x, float y, float w, float h) {
-    GLfloat vertices[] = {
-        x, y, x + w, y,          // Arriba
-        x, y + h, x + w, y + h,  // Abajo
-        x, y, x, y + h,          // Izquierda
-        x + w, y, x + w, y + h   // Derecha
+GLuint CreateShaderProgram() {
+    const char* vSource = 
+        "attribute vec4 vPosition;\n"
+        "void main() { gl_Position = vPosition; }\n";
+    const char* fSource = 
+        "precision mediump float;\n"
+        "void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }\n"; // Rojo
+    
+    GLuint vShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vShader, 1, &vSource, NULL);
+    glCompileShader(vShader);
+    
+    GLuint fShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fShader, 1, &fSource, NULL);
+    glCompileShader(fShader);
+    
+    GLuint program = glCreateProgram();
+    glAttachShader(program, vShader);
+    glAttachShader(program, fShader);
+    glLinkProgram(program);
+    
+    return program;
+}
+
+void DrawBox(float sx, float sy, float w, float h, float sw, float sh) {
+    auto toNDC = [](float x, float y, float scrW, float scrH) {
+        return std::make_pair((x / scrW) * 2.0f - 1.0f, 1.0f - (y / scrH) * 2.0f);
     };
-    glLineWidth(2.0f);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, vertices);
-    glEnableVertexAttribArray(0);
+
+    auto p1 = toNDC(sx, sy, sw, sh);
+    auto p2 = toNDC(sx + w, sy, sw, sh);
+    auto p3 = toNDC(sx, sy + h, sw, sh);
+    auto p4 = toNDC(sx + w, sy + h, sw, sh);
+
+    GLfloat vertices[] = {
+        p1.first, p1.second, p2.first, p2.second,
+        p1.first, p1.second, p3.first, p3.second,
+        p2.first, p2.second, p4.first, p4.second,
+        p3.first, p3.second, p4.first, p4.second
+    };
+
+    glUseProgram(shaderProgram);
+    glVertexAttribPointer(positionLoc, 2, GL_FLOAT, GL_FALSE, 0, vertices);
+    glEnableVertexAttribArray(positionLoc);
     glDrawArrays(GL_LINES, 0, 8);
+    glDisableVertexAttribArray(positionLoc);
 }
 
 EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
-    if (Camera_get_main && Camera_WorldToScreenPoint && Component_get_transform && Transform_get_position) {
+    if (!shaderInitialized) {
+        shaderProgram = CreateShaderProgram();
+        positionLoc = glGetAttribLocation(shaderProgram, "vPosition");
+        shaderInitialized = true;
+    }
+
+    if (shaderInitialized && Camera_get_main && Camera_WorldToScreenPoint && Component_get_transform && Transform_get_position) {
         void* cam = Camera_get_main();
         if (cam) {
             GLint viewport[4];
             glGetIntegerv(GL_VIEWPORT, viewport);
+            float screenWidth = viewport[2];
             float screenHeight = viewport[3];
 
             for (void* player : active_players) {
@@ -65,34 +109,23 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
                 if (!trans) continue;
 
                 Vector3 pos = Transform_get_position(trans);
-                
-                // Ajuste de altura: 1.75f es la estatura promedio de los modelos
                 Vector3 headPos = pos;
                 headPos.y += 1.75f; 
 
                 Vector3 screenHead = Camera_WorldToScreenPoint(cam, headPos, 0);
                 Vector3 screenFeet = Camera_WorldToScreenPoint(cam, pos, 0);
 
-                // Si está en pantalla y al frente de la cámara
                 if (screenHead.z > 0 && screenFeet.z > 0) { 
-                    
-                    // Calcular altura exacta del modelo en la pantalla
                     float topY = std::min(screenHead.y, screenFeet.y);
                     float bottomY = std::max(screenHead.y, screenFeet.y);
                     float boxHeight = bottomY - topY;
-                    
-                    // Calcular ancho proporcional (0.45f hace que quede pegada a los hombros)
                     float boxWidth = boxHeight * 0.45f; 
                     
-                    // Centrar la caja horizontalmente en el jugador
                     float x = screenHead.x - (boxWidth / 2);
-                    
-                    // Invertir la Y para OpenGL (que dibuja desde arriba hacia abajo)
-                    float y = screenHeight - bottomY;
+                    float sy = screenHeight - bottomY; // Invertir Y para top-left
 
-                    // Dibujar la caja
-                    glDisable(GL_DEPTH_TEST); // Para que se vea a través de las paredes
-                    DrawBox(x, y, boxWidth, boxHeight);
+                    glDisable(GL_DEPTH_TEST); 
+                    DrawBox(x, sy, boxWidth, boxHeight, screenWidth, screenHeight);
                     glEnable(GL_DEPTH_TEST);
                 }
             }
@@ -103,7 +136,6 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
 
 void* hack_thread(void*) {
     do { sleep(1); } while (!isLibraryLoaded("libil2cpp.so"));
-    LOGI("Juego cargado. Iniciando ESP...");
 
     Camera_get_main = (void*(*)())getAbsoluteAddress("libil2cpp.so", offset_Camera_main);
     Camera_WorldToScreenPoint = (Vector3(*)(void*, Vector3, int))getAbsoluteAddress("libil2cpp.so", offset_W2S);
