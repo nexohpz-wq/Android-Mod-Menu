@@ -11,14 +11,15 @@ public:
         this->env = env;
     }
 
-    void postAppSpecialize(const zygisk::AppSpecializeArgs *args) override {
+    // Usamos preAppSpecialize porque aquí aún hay permisos de root
+    void preAppSpecialize(zygisk::AppSpecializeArgs *args) override {
         const char *process = env->GetStringUTFChars(args->nice_name, nullptr);
         if (process) {
             if (strcmp(process, "com.ScarletWork.CounterFlame") == 0) {
-                // RUTA CORREGIDA: Ahora busca en la carpeta privada del juego
-                void *handle = dlopen("/data/data/com.ScarletWork.CounterFlame/files/libMyLibName.so", RTLD_NOW);
+                // Cargamos directo desde la carpeta del módulo (root permitido aquí)
+                void *handle = dlopen("/data/adb/modules/cf_esp/lib/arm64-v8a/libMyLibName.so", RTLD_NOW);
                 if (handle) {
-                    __android_log_print(ANDROID_LOG_INFO, "ZYGISK_ESP", "ESP inyectado con exito en CounterFlame");
+                    __android_log_print(ANDROID_LOG_INFO, "ZYGISK_ESP", "ESP inyectado en preAppSpecialize.");
                 } else {
                     __android_log_print(ANDROID_LOG_ERROR, "ZYGISK_ESP", "Fallo al inyectar: %s", dlerror());
                 }
