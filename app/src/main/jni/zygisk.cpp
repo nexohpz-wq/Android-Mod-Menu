@@ -2,6 +2,7 @@
 #include <dlfcn.h>
 #include <android/log.h>
 #include <cstring>
+#include <cstdio>
 #include "zygisk.hpp"
 
 class CF_ESP : public zygisk::ModuleBase {
@@ -11,17 +12,23 @@ public:
         this->env = env;
     }
 
-    // Usamos preAppSpecialize porque aquí aún hay permisos de root
-    void preAppSpecialize(zygisk::AppSpecializeArgs *args) override {
+    void postAppSpecialize(const zygisk::AppSpecializeArgs *args) override {
         const char *process = env->GetStringUTFChars(args->nice_name, nullptr);
         if (process) {
             if (strcmp(process, "com.ScarletWork.CounterFlame") == 0) {
-                // Cargamos directo desde la carpeta del módulo (root permitido aquí)
-                void *handle = dlopen("/data/adb/modules/cf_esp/lib/arm64-v8a/libMyLibName.so", RTLD_NOW);
-                if (handle) {
-                    __android_log_print(ANDROID_LOG_INFO, "ZYGISK_ESP", "ESP inyectado en preAppSpecialize.");
-                } else {
-                    __android_log_print(ANDROID_LOG_ERROR, "ZYGISK_ESP", "Fallo al inyectar: %s", dlerror());
+                // Escribimos el log en la carpeta privada del juego
+                FILE *f = fopen("/data/data/com.ScarletWork.CounterFlame/files/zygisk_log.txt", "w");
+                if (f) {
+                    fprintf(f, "Iniciando inyeccion...\n");
+                    // Intentamos cargar el ESP
+                    void *handle = dlopen("/data/data/com.ScarletWork.CounterFlame/files/libMyLibName.so", RTLD_NOW);
+                    if (handle) {
+                        fprintf(f, "EXITO: ESP inyectado.\n");
+                    } else {
+                        const char *err = dlerror();
+                        fprintf(f, "ERROR: %s\n", err ? err : "Desconocido");
+                    }
+                    fclose(f);
                 }
             }
             env->ReleaseStringUTFChars(args->nice_name, process);
