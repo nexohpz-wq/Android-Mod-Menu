@@ -39,7 +39,6 @@ bool shaderInitialized = false;
 void (*glGenVertexArraysOES)(GLsizei, GLuint*) = nullptr;
 void (*glBindVertexArrayOES)(GLuint) = nullptr;
 
-// Escribir en archivo para ver si el codigo corre
 void WriteLog(const char* msg) {
     FILE *f = fopen("/data/data/com.ScarletWork.CounterFlame/files/esp_debug.txt", "a");
     if (f) { fprintf(f, "%s\n", msg); fclose(f); }
@@ -59,10 +58,12 @@ eglSwapBuffers_t orig_eglSwapBuffers = nullptr;
 typedef EGLBoolean (*eglSwapBuffersWithDamage_t)(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects);
 eglSwapBuffersWithDamage_t orig_eglSwapBuffersWithDamageKHR = nullptr;
 
+typedef void* (*eglGetProcAddress_t)(const char *procname);
+eglGetProcAddress_t orig_eglGetProcAddress = nullptr;
+
 GLuint CreateShaderProgram() {
     const char* vSource = "attribute vec4 vPosition; void main() { gl_Position = vPosition; }";
-    const char* fSource = "precision mediump float; void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }"; // Rojo
-    
+    const char* fSource = "precision mediump float; void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }";
     GLuint vShader = glCreateShader(GL_VERTEX_SHADER); glShaderSource(vShader, 1, &vSource, NULL); glCompileShader(vShader);
     GLuint fShader = glCreateShader(GL_FRAGMENT_SHADER); glShaderSource(fShader, 1, &fSource, NULL); glCompileShader(fShader);
     GLuint program = glCreateProgram(); glAttachShader(program, vShader); glAttachShader(program, fShader); glLinkProgram(program);
@@ -70,6 +71,7 @@ GLuint CreateShaderProgram() {
 }
 
 void DrawTestSquare() {
+    WriteLog("DrawTestSquare ejecutado."); // Esto nos dirá si la función se dispara
     if (!shaderInitialized) {
         shaderProgram = CreateShaderProgram();
         positionLoc = glGetAttribLocation(shaderProgram, "vPosition");
@@ -77,29 +79,19 @@ void DrawTestSquare() {
         glBindVertexArrayOES = (void(*)(GLuint))eglGetProcAddress("glBindVertexArrayOES");
         if (glGenVertexArraysOES) glGenVertexArraysOES(1, &vao);
         shaderInitialized = true;
-        WriteLog("Shader inicializado.");
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glDisable(GL_SCISSOR_TEST); 
-    glDisable(GL_DEPTH_TEST); 
-    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_SCISSOR_TEST); glDisable(GL_DEPTH_TEST); glDisable(GL_STENCIL_TEST);
     glUseProgram(shaderProgram);
     if (glBindVertexArrayOES) glBindVertexArrayOES(vao);
 
-    // Cuadrado rojo gigante en el centro de la pantalla
-    GLfloat vertices[] = {
-        -0.5f,  0.5f,   0.5f,  0.5f,  // Arriba
-        -0.5f,  0.5f,  -0.5f, -0.5f,  // Izquierda
-         0.5f,  0.5f,   0.5f, -0.5f,  // Derecha
-        -0.5f, -0.5f,   0.5f, -0.5f   // Abajo
-    };
+    GLfloat vertices[] = { -0.5f, 0.5f, 0.5f, 0.5f, -0.5f, 0.5f, -0.5f, -0.5f, 0.5f, 0.5f, 0.5f, -0.5f, -0.5f, -0.5f, 0.5f, -0.5f };
 
     glVertexAttribPointer(positionLoc, 2, GL_FLOAT, GL_FALSE, 0, vertices);
     glEnableVertexAttribArray(positionLoc);
     glDrawArrays(GL_LINES, 0, 8);
     glDisableVertexAttribArray(positionLoc);
-    
     if (glBindVertexArrayOES) glBindVertexArrayOES(0);
 }
 
@@ -114,60 +106,54 @@ EGLBoolean hook_eglSwapBuffersWithDamageKHR(EGLDisplay dpy, EGLSurface surf, EGL
     return EGL_TRUE;
 }
 
+// Espía para ver qué funciones pide Unity
+void* hook_eglGetProcAddress(const char *procname) {
+    if (procname) {
+        char buf[256];
+        sprintf(buf, "Unity pidió: %s", procname);
+        WriteLog(buf);
+        if (strcmp(procname, "eglSwapBuffers") == 0) {
+            if (!orig_eglSwapBuffers) orig_eglSwapBuffers = (eglSwapBuffers_t)orig_eglGetProcAddress(procname);
+            return (void*)hook_eglSwapBuffers;
+        }
+        if (strcmp(procname, "eglSwapBuffersWithDamageKHR") == 0) {
+            if (!orig_eglSwapBuffersWithDamageKHR) orig_eglSwapBuffersWithDamageKHR = (eglSwapBuffersWithDamage_t)orig_eglGetProcAddress(procname);
+            return (void*)hook_eglSwapBuffersWithDamageKHR;
+        }
+    }
+    return orig_eglGetProcAddress(procname);
+}
+
 void* hack_thread(void*) {
     WriteLog("Hack Thread Iniciado");
-    
     void* il2cpp_handle = nullptr;
-    while (!il2cpp_handle) {
-        il2cpp_handle = dlopen("libil2cpp.so", RTLD_LAZY);
-        if (!il2cpp_handle) sleep(1);
-    }
-    
+    while (!il2cpp_handle) { il2cpp_handle = dlopen("libil2cpp.so", RTLD_LAZY); if (!il2cpp_handle) sleep(1); }
     uintptr_t base = 0;
     void* il2cpp_init = dlsym(il2cpp_handle, "il2cpp_init");
     Dl_info info;
-    if (il2cpp_init && dladdr(il2cpp_init, &info)) {
-        base = (uintptr_t)info.dli_fbase;
-    }
-    
-    char buf[128];
-    sprintf(buf, "Base libil2cpp: %lx", (unsigned long)base);
-    WriteLog(buf);
+    if (il2cpp_init && dladdr(il2cpp_init, &info)) { base = (uintptr_t)info.dli_fbase; }
     
     if (base != 0) {
         Camera_get_main = (void*(*)())(base + offset_Camera_main);
         Camera_WorldToScreenPoint = (Vector3(*)(void*, Vector3, int))(base + offset_W2S);
         Component_get_transform = (void*(*)(void*))(base + offset_Component_transform);
         Transform_get_position = (Vector3(*)(void*))(base + offset_Transform_pos);
-        
         void* pmUpdate = (void*)(base + offset_PM_Update);
-        int res = DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
-        sprintf(buf, "Hook PM_Update res: %d", res);
-        WriteLog(buf);
+        DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
     }
     
     void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
     if (egl_handle) {
-        void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
-        if (swapFunc) {
-            int r1 = DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
-            sprintf(buf, "Hook eglSwapBuffers res: %d", r1);
-            WriteLog(buf);
-        }
+        void* getProcAddrFunc = dlsym(egl_handle, "eglGetProcAddress");
+        if (getProcAddrFunc) DobbyHook(getProcAddrFunc, (void*)hook_eglGetProcAddress, (void**)&orig_eglGetProcAddress);
         
-        void* swapKHR = dlsym(egl_handle, "eglSwapBuffersWithDamageKHR");
-        if (swapKHR) {
-            int r2 = DobbyHook(swapKHR, (void*)hook_eglSwapBuffersWithDamageKHR, (void**)&orig_eglSwapBuffersWithDamageKHR);
-            sprintf(buf, "Hook eglSwapBuffersWithDamageKHR res: %d", r2);
-            WriteLog(buf);
-        }
+        void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
+        if (swapFunc) DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
     }
     return nullptr;
 }
 
 __attribute__((constructor))
 void lib_main() {
-    pthread_t pt;
-    pthread_create(&pt, nullptr, hack_thread, nullptr);
-    pthread_detach(pt);
+    pthread_t pt; pthread_create(&pt, nullptr, hack_thread, nullptr); pthread_detach(pt);
 }
