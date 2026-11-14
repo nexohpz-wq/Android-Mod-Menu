@@ -9,13 +9,12 @@
 #include <algorithm>
 #include "Includes/Utils.hpp"
 #include "Dobby/dobby.h"
-#include "Menu/ImGui/imgui.h"
-#include "Menu/ImGui/imgui_internal.h"
-#include "Menu/ImGui/backends/imgui_impl_opengl3.h"
+#include "imgui.h"
+#include "imgui_internal.h"
+#include "backends/imgui_impl_opengl3.h"
 
 struct Vector3 { float x, y, z; };
 
-// TUS OFFSETS EXACTOS
 uintptr_t offset_PM_Update = 0x29aa3d8;
 uintptr_t offset_Camera_main = 0x2b55a10;
 uintptr_t offset_W2S = 0x2b55654;
