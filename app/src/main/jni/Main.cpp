@@ -10,6 +10,7 @@
 #include <set>
 #include <algorithm>
 #include <cstdio>
+#include <mutex>
 #include <android/log.h>
 #include "Includes/Utils.hpp"
 #include "Dobby/dobby.h"
@@ -31,6 +32,7 @@ Vector3 (*Transform_get_position)(void* trans) = nullptr;
 
 void (*orig_PM_Update)(void* instance) = nullptr;
 std::set<void*> active_players;
+std::mutex players_mutex; // Candado de seguridad
 
 GLuint shaderProgram = 0;
 GLint positionLoc = -1;
@@ -45,9 +47,10 @@ void WriteLog(const char* msg) {
 }
 
 void hook_PM_Update(void* instance) {
-    if (instance && active_players.size() < 100) {
-        if (active_players.insert(instance).second) {
-            WriteLog("Jugador detectado y guardado.");
+    if (instance) {
+        std::lock_guard<std::mutex> lock(players_mutex);
+        if (active_players.size() < 100) {
+            active_players.insert(instance);
         }
     }
     if (orig_PM_Update) orig_PM_Update(instance);
@@ -58,6 +61,9 @@ eglSwapBuffers_t orig_eglSwapBuffers = nullptr;
 
 typedef EGLBoolean (*eglSwapBuffersWithDamageKHR_t)(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects);
 eglSwapBuffersWithDamageKHR_t orig_eglSwapBuffersWithDamageKHR = nullptr;
+
+typedef void* (*eglGetProcAddress_t)(const char *procname);
+eglGetProcAddress_t orig_eglGetProcAddress = nullptr;
 
 GLuint CreateShaderProgram() {
     const char* vSource = "attribute vec4 vPosition; void main() { gl_Position = vPosition; }";
@@ -103,6 +109,7 @@ void DrawESP() {
             glUseProgram(shaderProgram);
             if (glBindVertexArrayOES) glBindVertexArrayOES(vao);
 
+            std::lock_guard<std::mutex> lock(players_mutex);
             for (void* player : active_players) {
                 void* trans = Component_get_transform(player);
                 if (!trans) continue;
@@ -126,15 +133,30 @@ void DrawESP() {
 }
 
 EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
-    WriteLog("hook_eglSwapBuffers disparandose!");
     DrawESP();
     return orig_eglSwapBuffers(dpy, surf);
 }
 
 EGLBoolean hook_eglSwapBuffersWithDamageKHR(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects) {
-    WriteLog("hook_eglSwapBuffersWithDamageKHR disparandose!");
     DrawESP();
     return orig_eglSwapBuffersWithDamageKHR(dpy, surf, rects, n_rects);
+}
+
+// EL NUEVO HOOK: Intercepta cuando el juego pide funciones
+void* hook_eglGetProcAddress(const char *procname) {
+    if (procname) {
+        if (strcmp(procname, "eglSwapBuffers") == 0) {
+            WriteLog("Juego pidió eglSwapBuffers");
+            if (!orig_eglSwapBuffers) orig_eglSwapBuffers = (eglSwapBuffers_t)orig_eglGetProcAddress(procname);
+            return (void*)hook_eglSwapBuffers;
+        }
+        if (strcmp(procname, "eglSwapBuffersWithDamageKHR") == 0) {
+            WriteLog("Juego pidió eglSwapBuffersWithDamageKHR");
+            if (!orig_eglSwapBuffersWithDamageKHR) orig_eglSwapBuffersWithDamageKHR = (eglSwapBuffersWithDamageKHR_t)orig_eglGetProcAddress(procname);
+            return (void*)hook_eglSwapBuffersWithDamageKHR;
+        }
+    }
+    return orig_eglGetProcAddress(procname);
 }
 
 void* hack_thread(void*) {
@@ -153,14 +175,22 @@ void* hack_thread(void*) {
         
         void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
         if (egl_handle) {
+            // Hookear la función principal de EGL
+            void* getProcAddrFunc = dlsym(egl_handle, "eglGetProcAddress");
+            if (getProcAddrFunc) {
+                DobbyHook(getProcAddrFunc, (void*)hook_eglGetProcAddress, (void**)&orig_eglGetProcAddress);
+                WriteLog("Hook eglGetProcAddress instalado.");
+            }
+
             void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
-            if (swapFunc) DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
+            if (swapFunc && !orig_eglSwapBuffers) {
+                DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
+            }
             
             void* swapFuncKHR = dlsym(egl_handle, "eglSwapBuffersWithDamageKHR");
-            if (swapFuncKHR) DobbyHook(swapFuncKHR, (void*)hook_eglSwapBuffersWithDamageKHR, (void**)&orig_eglSwapBuffersWithDamageKHR);
-
-            void* swapFuncEXT = dlsym(egl_handle, "eglSwapBuffersWithDamageEXT");
-            if (swapFuncEXT) DobbyHook(swapFuncEXT, (void*)hook_eglSwapBuffersWithDamageKHR, (void**)&orig_eglSwapBuffersWithDamageKHR);
+            if (swapFuncKHR && !orig_eglSwapBuffersWithDamageKHR) {
+                DobbyHook(swapFuncKHR, (void*)hook_eglSwapBuffersWithDamageKHR, (void**)&orig_eglSwapBuffersWithDamageKHR);
+            }
         }
     }
     return nullptr;
