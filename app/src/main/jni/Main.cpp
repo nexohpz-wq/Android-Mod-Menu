@@ -97,19 +97,22 @@ void DrawTestSquare() {
     if (glBindVertexArrayOES) glBindVertexArrayOES(0);
 }
 
-// Nuestro Hook de glDrawArraysInstanced
+// --- AQUI ESTA LA FUNCION QUE FALTABA ---
+EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
+    DrawTestSquare();
+    return orig_eglSwapBuffers(dpy, surf);
+}
+// ----------------------------------------
+
 void hook_glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instancecount) {
-    // Dejamos que el juego dibuje primero
     if (orig_glDrawArraysInstanced) orig_glDrawArraysInstanced(mode, first, count, instancecount);
     
-    // Dibujamos el cuadrado encima (solo 1 vez para probar)
     static int drawCount = 0;
     if (drawCount++ == 100) {
         DrawTestSquare();
     }
 }
 
-// Espía de eglGetProcAddress para interceptar glDrawArraysInstanced
 void* hook_eglGetProcAddress(const char *procname) {
     if (procname) {
         if (strcmp(procname, "glDrawArraysInstanced") == 0) {
