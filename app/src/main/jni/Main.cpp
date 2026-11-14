@@ -1,19 +1,16 @@
 #include <jni.h>
-#include <EGL/egl.h>
-#include <EGL/eglext.h>
-#include <GLES2/gl2.h>
-#include <GLES3/gl3.h>
-#include <dlfcn.h>
 #include <pthread.h>
 #include <unistd.h>
-#include <cmath>
+#include <dlfcn.h>
+#include <EGL/egl.h>
+#include <GLES3/gl3.h>
 #include <set>
-#include <algorithm>
-#include <cstdio>
 #include <mutex>
-#include <android/log.h>
 #include "Includes/Utils.hpp"
 #include "Dobby/dobby.h"
+#include "ImGui/imgui.h"
+#include "ImGui/imgui_internal.h"
+#include "ImGui/backends/imgui_impl_opengl3.h"
 
 struct Vector3 { float x, y, z; };
 
@@ -33,14 +30,8 @@ void (*orig_PM_Update)(void* instance) = nullptr;
 std::set<void*> active_players;
 std::mutex players_mutex;
 
-GLuint shaderProgram = 0;
-GLint positionLoc = -1;
-bool shaderInitialized = false;
-
-void WriteLog(const char* msg) {
-    FILE *f = fopen("/data/data/com.ScarletWork.CounterFlame/files/esp_debug.txt", "a");
-    if (f) { fprintf(f, "%s\n", msg); fclose(f); }
-}
+bool imgui_initialized = false;
+int screen_h = 0;
 
 void hook_PM_Update(void* instance) {
     if (instance) {
@@ -53,100 +44,68 @@ void hook_PM_Update(void* instance) {
 typedef EGLBoolean (*eglSwapBuffers_t)(EGLDisplay dpy, EGLSurface surf);
 eglSwapBuffers_t orig_eglSwapBuffers = nullptr;
 
-typedef EGLBoolean (*eglSwapBuffersWithDamage_t)(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects);
-eglSwapBuffersWithDamage_t orig_eglSwapBuffersWithDamageKHR = nullptr;
-
-GLuint CreateShaderProgram() {
-    const char* vSource = "attribute vec4 vPosition; void main() { gl_Position = vPosition; }";
-    const char* fSource = "precision mediump float; void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }"; // Rojo
-    GLuint vShader = glCreateShader(GL_VERTEX_SHADER); glShaderSource(vShader, 1, &vSource, NULL); glCompileShader(vShader);
-    GLuint fShader = glCreateShader(GL_FRAGMENT_SHADER); glShaderSource(fShader, 1, &fSource, NULL); glCompileShader(fShader);
-    GLuint program = glCreateProgram(); glAttachShader(program, vShader); glAttachShader(program, fShader); glLinkProgram(program);
-    return program;
-}
-
-void DrawBox(float sx, float sy, float w, float h, float sw, float sh) {
-    auto toNDC = [](float x, float y, float scrW, float scrH) {
-        return std::make_pair((x / scrW) * 2.0f - 1.0f, 1.0f - (y / scrH) * 2.0f);
-    };
-    auto p1 = toNDC(sx, sy, sw, sh); auto p2 = toNDC(sx + w, sy, sw, sh);
-    auto p3 = toNDC(sx, sy + h, sw, sh); auto p4 = toNDC(sx + w, sy + h, sw, sh);
-    GLfloat vertices[] = { 
-        p1.first, p1.second, p2.first, p2.second, 
-        p1.first, p1.second, p3.first, p3.second, 
-        p2.first, p2.second, p4.first, p4.second, 
-        p3.first, p3.second, p4.first, p4.second 
-    };
-    glVertexAttribPointer(positionLoc, 2, GL_FLOAT, GL_FALSE, 0, vertices);
-    glEnableVertexAttribArray(positionLoc);
-    glDrawArrays(GL_LINES, 0, 8);
-    glDisableVertexAttribArray(positionLoc);
-}
-
-void DrawESP() {
-    if (!shaderInitialized) {
-        shaderProgram = CreateShaderProgram();
-        positionLoc = glGetAttribLocation(shaderProgram, "vPosition");
-        shaderInitialized = true;
-        WriteLog("Shader inicializado dentro de DrawESP.");
+EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
+    if (!imgui_initialized) {
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        ImGuiIO& io = ImGui::GetIO();
+        io.IniFilename = NULL;
+        ImGui_ImplOpenGL3_Init("#version 300 es");
+        imgui_initialized = true;
     }
 
-    if (shaderInitialized && Camera_get_main && Camera_WorldToScreenPoint) {
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    screen_h = viewport[3];
+
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui::NewFrame();
+
+    if (Camera_get_main && Camera_WorldToScreenPoint) {
         void* cam = Camera_get_main();
-        if (!cam) return;
+        if (cam) {
+            ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+            std::lock_guard<std::mutex> lock(players_mutex);
+            
+            for (void* player : active_players) {
+                void* trans = Component_get_transform(player);
+                if (!trans) continue;
+                
+                Vector3 pos = Transform_get_position(trans);
+                Vector3 headPos = pos; headPos.y += 1.75f;
+                
+                Vector3 sHead = Camera_WorldToScreenPoint(cam, headPos, 0);
+                Vector3 sFeet = Camera_WorldToScreenPoint(cam, pos, 0);
 
-        GLint viewport[4]; glGetIntegerv(GL_VIEWPORT, viewport);
-        float sw = viewport[2]; float sh = viewport[3];
+                if (sHead.z > 0 && sFeet.z > 0) { 
+                    float topY = std::max(sHead.y, sFeet.y);
+                    float bottomY = std::min(sHead.y, sFeet.y);
+                    float h = topY - bottomY;
+                    float w = h * 0.45f; 
+                    float x = sHead.x - (w / 2);
+                    float y = screen_h - topY;
 
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDisable(GL_SCISSOR_TEST); glDisable(GL_DEPTH_TEST); glDisable(GL_STENCIL_TEST);
-        glUseProgram(shaderProgram);
-
-        std::lock_guard<std::mutex> lock(players_mutex);
-        int drawn = 0;
-        for (void* player : active_players) {
-            void* trans = Component_get_transform(player);
-            if (!trans) continue;
-            Vector3 pos = Transform_get_position(trans);
-            Vector3 headPos = pos; headPos.y += 1.75f;
-            Vector3 screenHead = Camera_WorldToScreenPoint(cam, headPos, 0);
-            Vector3 screenFeet = Camera_WorldToScreenPoint(cam, pos, 0);
-
-            if (screenHead.z > 0 && screenFeet.z > 0) { 
-                float topY = std::max(screenHead.y, screenFeet.y);
-                float bottomY = std::min(screenHead.y, screenFeet.y);
-                float boxHeight = topY - bottomY;
-                float boxWidth = boxHeight * 0.45f; 
-                float x = screenHead.x - (boxWidth / 2);
-                float sy = sh - topY;
-                DrawBox(x, sy, boxWidth, boxHeight, sw, sh);
-                drawn++;
+                    // Dibujar la caja roja (ImGui lo hace en la GPU)
+                    draw_list->AddRect(
+                        ImVec2(x, y), 
+                        ImVec2(x + w, y + h), 
+                        IM_COL32(255, 0, 0, 255), 
+                        0.0f, 0, 2.0f 
+                    );
+                }
             }
         }
-        static int count = 0;
-        if (drawn > 0 && count++ % 120 == 0) WriteLog("Cajas dibujadas en pantalla!");
     }
-}
 
-EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
-    DrawESP();
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
     return orig_eglSwapBuffers(dpy, surf);
 }
 
-EGLBoolean hook_eglSwapBuffersWithDamageKHR(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects) {
-    DrawESP();
-    return orig_eglSwapBuffersWithDamageKHR(dpy, surf, rects, n_rects);
-}
-
 void* hack_thread(void*) {
-    WriteLog("hack_thread iniciado (esperando libil2cpp)");
-    
-    uintptr_t base = 0;
-    while (base == 0) {
-        base = getLibraryAddress("libil2cpp.so");
-        if (base == 0) sleep(1);
-    }
-    WriteLog("libil2cpp.so cargado.");
+    do { sleep(1); } while (!isLibraryLoaded("libil2cpp.so"));
+    uintptr_t base = getLibraryAddress("libil2cpp.so");
     
     if (base != 0) {
         Camera_get_main = (void*(*)())(base + offset_Camera_main);
@@ -156,29 +115,17 @@ void* hack_thread(void*) {
         
         void* pmUpdate = (void*)(base + offset_PM_Update);
         DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
-        WriteLog("Hook PM_Update instalado.");
     }
     
     void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
     if (egl_handle) {
         void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
-        if (swapFunc) {
-            DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
-            WriteLog("Hook eglSwapBuffers instalado.");
-        }
-        
-        void* swapKHR = dlsym(egl_handle, "eglSwapBuffersWithDamageKHR");
-        if (swapKHR) {
-            DobbyHook(swapKHR, (void*)hook_eglSwapBuffersWithDamageKHR, (void**)&orig_eglSwapBuffersWithDamageKHR);
-            WriteLog("Hook eglSwapBuffersWithDamageKHR instalado.");
-        }
+        if (swapFunc) DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
     }
     return nullptr;
 }
 
 __attribute__((constructor))
 void lib_main() {
-    pthread_t pt; 
-    pthread_create(&pt, nullptr, hack_thread, nullptr); 
-    pthread_detach(pt);
+    pthread_t pt; pthread_create(&pt, nullptr, hack_thread, nullptr); pthread_detach(pt);
 }
