@@ -16,9 +16,7 @@ LOCAL_SRC_FILES := Main.cpp \
                    $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/MemoryAllocator/**/*.cc)) \
                    $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/TrampolineBridge/**/*.cc)) \
                    $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Menu/ImGui/*.cpp)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Menu/ImGui/backends/imgui_impl_opengl3.cpp)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/ImGui/*.cpp)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/ImGui/backends/imgui_impl_opengl3.cpp))
+                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Menu/ImGui/backends/*.cpp))
 
 LOCAL_C_INCLUDES := $(LOCAL_PATH) \
                     $(LOCAL_PATH)/Includes \
@@ -26,9 +24,7 @@ LOCAL_C_INCLUDES := $(LOCAL_PATH) \
                     $(LOCAL_PATH)/Dobby \
                     $(LOCAL_PATH)/Dobby/include \
                     $(LOCAL_PATH)/Menu/ImGui \
-                    $(LOCAL_PATH)/Menu/ImGui/backends \
-                    $(LOCAL_PATH)/ImGui \
-                    $(LOCAL_PATH)/ImGui/backends
+                    $(LOCAL_PATH)/Menu/ImGui/backends
 
 LOCAL_CPPFLAGS  := -std=c++17 -fexceptions -frtti -Wno-error -DIMGUI_DEFINE_MATH_OPERATORS -DIMGUI_IMPL_OPENGL_ES2
 LOCAL_CFLAGS    := -Wno-error
