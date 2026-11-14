@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include <GLES2/gl2.h>
 #include <GLES3/gl3.h>
 #include <dlfcn.h>
@@ -38,7 +39,6 @@ bool shaderInitialized = false;
 void (*glGenVertexArraysOES)(GLsizei, GLuint*) = nullptr;
 void (*glBindVertexArrayOES)(GLuint) = nullptr;
 
-// RUTA CORREGIDA: Ahora escribe en la carpeta del juego
 void WriteLog(const char* msg) {
     FILE *f = fopen("/data/data/com.ScarletWork.CounterFlame/files/esp_debug.txt", "a");
     if (f) { fprintf(f, "%s\n", msg); fclose(f); }
@@ -55,6 +55,9 @@ void hook_PM_Update(void* instance) {
 
 typedef EGLBoolean (*eglSwapBuffers_t)(EGLDisplay dpy, EGLSurface surf);
 eglSwapBuffers_t orig_eglSwapBuffers = nullptr;
+
+typedef EGLBoolean (*eglSwapBuffersWithDamageKHR_t)(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects);
+eglSwapBuffersWithDamageKHR_t orig_eglSwapBuffersWithDamageKHR = nullptr;
 
 GLuint CreateShaderProgram() {
     const char* vSource = "attribute vec4 vPosition; void main() { gl_Position = vPosition; }";
@@ -78,14 +81,7 @@ void DrawBox(float sx, float sy, float w, float h, float sw, float sh) {
     glDisableVertexAttribArray(positionLoc);
 }
 
-EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
-    static int frameCount = 0;
-    if (frameCount++ % 60 == 0) {
-        char buf[128];
-        sprintf(buf, "hook_eglSwapBuffers disparandose. Jugadores: %zu", active_players.size());
-        WriteLog(buf);
-    }
-
+void DrawESP() {
     if (!shaderInitialized) {
         shaderProgram = CreateShaderProgram();
         positionLoc = glGetAttribLocation(shaderProgram, "vPosition");
@@ -127,13 +123,23 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
             }
         }
     }
+}
+
+EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
+    WriteLog("hook_eglSwapBuffers disparandose!");
+    DrawESP();
     return orig_eglSwapBuffers(dpy, surf);
+}
+
+EGLBoolean hook_eglSwapBuffersWithDamageKHR(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects) {
+    WriteLog("hook_eglSwapBuffersWithDamageKHR disparandose!");
+    DrawESP();
+    return orig_eglSwapBuffersWithDamageKHR(dpy, surf, rects, n_rects);
 }
 
 void* hack_thread(void*) {
     WriteLog("hack_thread iniciado");
     do { sleep(1); } while (!isLibraryLoaded("libil2cpp.so"));
-    WriteLog("libil2cpp.so cargado");
     
     uintptr_t base = getLibraryAddress("libil2cpp.so");
     if (base != 0) {
@@ -143,25 +149,24 @@ void* hack_thread(void*) {
         Transform_get_position = (Vector3(*)(void*))(base + offset_Transform_pos);
         
         void* pmUpdate = (void*)(base + offset_PM_Update);
-        int res1 = DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
-        char buf[64]; sprintf(buf, "Hook PM_Update res: %d", res1);
-        WriteLog(buf);
+        DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
         
         void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
         if (egl_handle) {
             void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
-            if (swapFunc) {
-                int res2 = DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
-                sprintf(buf, "Hook eglSwapBuffers res: %d", res2);
-                WriteLog(buf);
-            }
+            if (swapFunc) DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
+            
+            void* swapFuncKHR = dlsym(egl_handle, "eglSwapBuffersWithDamageKHR");
+            if (swapFuncKHR) DobbyHook(swapFuncKHR, (void*)hook_eglSwapBuffersWithDamageKHR, (void**)&orig_eglSwapBuffersWithDamageKHR);
+
+            void* swapFuncEXT = dlsym(egl_handle, "eglSwapBuffersWithDamageEXT");
+            if (swapFuncEXT) DobbyHook(swapFuncEXT, (void*)hook_eglSwapBuffersWithDamageKHR, (void**)&orig_eglSwapBuffersWithDamageKHR);
         }
     }
     return nullptr;
 }
 
 extern "C" void StartESP() {
-    WriteLog("StartESP llamado desde Frida");
     pthread_t pt; 
     pthread_create(&pt, nullptr, hack_thread, nullptr); 
     pthread_detach(pt);
