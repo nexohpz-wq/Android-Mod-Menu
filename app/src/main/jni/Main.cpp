@@ -52,7 +52,6 @@ void hook_PM_Update(void* instance) {
     if (orig_PM_Update) orig_PM_Update(instance);
 }
 
-// --- HOOKS EGL ---
 typedef EGLBoolean (*eglSwapBuffers_t)(EGLDisplay dpy, EGLSurface surf);
 eglSwapBuffers_t orig_eglSwapBuffers = nullptr;
 
@@ -63,12 +62,8 @@ eglSwapBuffersWithDamage_t orig_eglSwapBuffersWithDamageEXT = nullptr;
 typedef EGLBoolean (*eglMakeCurrent_t)(EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx);
 eglMakeCurrent_t orig_eglMakeCurrent = nullptr;
 
-// --- HOOK OPENGL ---
 typedef void (*glDrawArraysInstanced_t)(GLenum mode, GLint first, GLsizei count, GLsizei instancecount);
 glDrawArraysInstanced_t orig_glDrawArraysInstanced = nullptr;
-
-typedef void (*glDrawElementsInstanced_t)(GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount);
-glDrawElementsInstanced_t orig_glDrawElementsInstanced = nullptr;
 
 GLuint CreateShaderProgram() {
     const char* vSource = "attribute vec4 vPosition; void main() { gl_Position = vPosition; }";
@@ -124,15 +119,15 @@ EGLBoolean hook_eglSwapBuffersWithDamageEXT(EGLDisplay dpy, EGLSurface surf, EGL
 }
 
 EGLBoolean hook_eglMakeCurrent(EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx) {
-    static int count = 0;
-    if (count++ < 3) WriteLog("eglMakeCurrent disparado!"); // Solo loguea las primeras veces
+    static int mcCount = 0;
+    if (mcCount++ < 3) WriteLog("eglMakeCurrent disparado!");
     return orig_eglMakeCurrent(dpy, draw, read, ctx);
 }
 
 void hook_glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instancecount) {
     if (orig_glDrawArraysInstanced) orig_glDrawArraysInstanced(mode, first, count, instancecount);
-    static int count = 0;
-    if (count++ == 100) DrawTestSquare(); // Dibuja una vez para probar
+    static int drawCount = 0; // Corregido aquí
+    if (drawCount++ == 100) DrawTestSquare(); 
 }
 
 void* hack_thread(void*) {
