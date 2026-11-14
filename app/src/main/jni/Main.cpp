@@ -8,9 +8,9 @@
 #include <mutex>
 #include "Includes/Utils.hpp"
 #include "Dobby/dobby.h"
-#include "Menu/ImGui/imgui.h"
-#include "Menu/ImGui/imgui_internal.h"
-#include "Menu/ImGui/backends/imgui_impl_opengl3.h"
+#include "imgui.h"
+#include "imgui_internal.h"
+#include "imgui_impl_opengl3.h"
 
 struct Vector3 { float x, y, z; };
 
