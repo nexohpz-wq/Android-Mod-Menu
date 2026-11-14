@@ -45,9 +45,6 @@ void WriteLog(const char* msg) {
 }
 
 void hook_PM_Update(void* instance) {
-    static int count = 0;
-    if (count++ % 120 == 0) WriteLog("PlayerMovement.Update ejecutándose!"); // Log para saber si avanza
-    
     if (instance) {
         std::lock_guard<std::mutex> lock(players_mutex);
         if (active_players.size() < 100) active_players.insert(instance);
@@ -75,7 +72,7 @@ GLuint CreateShaderProgram() {
 
 void DrawTestSquare() {
     static bool logged = false;
-    if (!logged) { WriteLog("DrawTestSquare ejecutado en el hilo de OpenGL!"); logged = true; }
+    if (!logged) { WriteLog("DrawTestSquare se está ejecutando en OpenGL!"); logged = true; }
 
     if (!shaderInitialized) {
         shaderProgram = CreateShaderProgram();
@@ -101,25 +98,22 @@ void DrawTestSquare() {
 }
 
 EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
-    WriteLog("hook_eglSwapBuffers llamado!");
     DrawTestSquare();
     return orig_eglSwapBuffers(dpy, surf);
 }
 
 void hook_glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instancecount) {
     if (orig_glDrawArraysInstanced) orig_glDrawArraysInstanced(mode, first, count, instancecount);
-    
-    static int drawCount = 0;
-    if (drawCount++ == 100) {
-        WriteLog("hook_glDrawArraysInstanced disparado!");
+    static bool firstTime = true;
+    if (firstTime) {
         DrawTestSquare();
+        firstTime = false;
     }
 }
 
 void* hook_eglGetProcAddress(const char *procname) {
     if (procname) {
         if (strcmp(procname, "glDrawArraysInstanced") == 0) {
-            WriteLog("Unity pidió glDrawArraysInstanced!");
             if (!orig_glDrawArraysInstanced) orig_glDrawArraysInstanced = (glDrawArraysInstanced_t)orig_eglGetProcAddress(procname);
             return (void*)hook_glDrawArraysInstanced;
         }
@@ -128,45 +122,30 @@ void* hook_eglGetProcAddress(const char *procname) {
 }
 
 void* hack_thread(void*) {
-    WriteLog("hack_thread iniciado");
-    
+    WriteLog("Hack Thread Iniciado");
+    void* il2cpp_handle = nullptr;
+    while (!il2cpp_handle) { il2cpp_handle = dlopen("libil2cpp.so", RTLD_LAZY); if (!il2cpp_handle) sleep(1); }
     uintptr_t base = 0;
-    while (base == 0) {
-        base = getLibraryAddress("libil2cpp.so");
-        if (base == 0) sleep(1);
-    }
-    
-    char buf[64];
-    sprintf(buf, "Base libil2cpp: 0x%lx", (unsigned long)base);
-    WriteLog(buf);
+    void* il2cpp_init = dlsym(il2cpp_handle, "il2cpp_init");
+    Dl_info info;
+    if (il2cpp_init && dladdr(il2cpp_init, &info)) { base = (uintptr_t)info.dli_fbase; }
     
     if (base != 0) {
         Camera_get_main = (void*(*)())(base + offset_Camera_main);
         Camera_WorldToScreenPoint = (Vector3(*)(void*, Vector3, int))(base + offset_W2S);
         Component_get_transform = (void*(*)(void*))(base + offset_Component_transform);
         Transform_get_position = (Vector3(*)(void*))(base + offset_Transform_pos);
-        
         void* pmUpdate = (void*)(base + offset_PM_Update);
-        int res1 = DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
-        sprintf(buf, "Hook PM_Update res: %d", res1);
-        WriteLog(buf);
+        DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
     }
     
     void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
     if (egl_handle) {
         void* getProcAddrFunc = dlsym(egl_handle, "eglGetProcAddress");
-        if (getProcAddrFunc) {
-            int res2 = DobbyHook(getProcAddrFunc, (void*)hook_eglGetProcAddress, (void**)&orig_eglGetProcAddress);
-            sprintf(buf, "Hook eglGetProcAddress res: %d", res2);
-            WriteLog(buf);
-        }
+        if (getProcAddrFunc) DobbyHook(getProcAddrFunc, (void*)hook_eglGetProcAddress, (void**)&orig_eglGetProcAddress);
         
         void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
-        if (swapFunc) {
-            int res3 = DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
-            sprintf(buf, "Hook eglSwapBuffers res: %d", res3);
-            WriteLog(buf);
-        }
+        if (swapFunc) DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
     }
     return nullptr;
 }
