@@ -2,6 +2,7 @@ LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE    := MyLibName
+
 LOCAL_SRC_FILES := Main.cpp \
                    Includes/Utils.cpp \
                    xDL/xdl.c \
@@ -9,20 +10,18 @@ LOCAL_SRC_FILES := Main.cpp \
                    xDL/xdl_linker.c \
                    xDL/xdl_lzma.c \
                    xDL/xdl_util.c \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/*.cc)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/Backend/UserMode/**/*.cc)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/Core/**/*.cc)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/InstructionRelocation/**/*.cc)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/MemoryAllocator/**/*.cc)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/TrampolineBridge/**/*.cc)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Menu/ImGui/*.cpp)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Menu/ImGui/backends/*.cpp))
+                   $(call all-cpp-files-under, Dobby/source) \
+                   $(call all-c-files-under, Dobby/source) \
+                   $(call all-cpp-files-under, ImGui) \
+                   $(call all-cpp-files-under, Menu/ImGui)
 
 LOCAL_C_INCLUDES := $(LOCAL_PATH) \
                     $(LOCAL_PATH)/Includes \
                     $(LOCAL_PATH)/xDL \
                     $(LOCAL_PATH)/Dobby \
                     $(LOCAL_PATH)/Dobby/include \
+                    $(LOCAL_PATH)/ImGui \
+                    $(LOCAL_PATH)/ImGui/backends \
                     $(LOCAL_PATH)/Menu/ImGui \
                     $(LOCAL_PATH)/Menu/ImGui/backends
 
