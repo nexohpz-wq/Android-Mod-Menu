@@ -45,15 +45,9 @@ void WriteLog(const char* msg) {
 }
 
 void hook_PM_Update(void* instance) {
-    static int count = 0;
-    if (count++ % 120 == 0) { // Loguea cada 2 segundos aprox
-        WriteLog("PlayerMovement.Update ejecutándose...");
-    }
     if (instance) {
         std::lock_guard<std::mutex> lock(players_mutex);
-        if (active_players.size() < 100) {
-            active_players.insert(instance);
-        }
+        if (active_players.size() < 100) active_players.insert(instance);
     }
     if (orig_PM_Update) orig_PM_Update(instance);
 }
@@ -61,8 +55,12 @@ void hook_PM_Update(void* instance) {
 typedef EGLBoolean (*eglSwapBuffers_t)(EGLDisplay dpy, EGLSurface surf);
 eglSwapBuffers_t orig_eglSwapBuffers = nullptr;
 
-typedef EGLBoolean (*eglSwapBuffersWithDamageKHR_t)(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects);
-eglSwapBuffersWithDamageKHR_t orig_eglSwapBuffersWithDamageKHR = nullptr;
+typedef EGLBoolean (*eglSwapBuffersWithDamage_t)(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects);
+eglSwapBuffersWithDamage_t orig_eglSwapBuffersWithDamageKHR = nullptr;
+eglSwapBuffersWithDamage_t orig_eglSwapBuffersWithDamageEXT = nullptr;
+
+typedef void* (*eglGetProcAddress_t)(const char *procname);
+eglGetProcAddress_t orig_eglGetProcAddress = nullptr;
 
 GLuint CreateShaderProgram() {
     const char* vSource = "attribute vec4 vPosition; void main() { gl_Position = vPosition; }";
@@ -94,7 +92,7 @@ void DrawESP() {
         glBindVertexArrayOES = (void(*)(GLuint))eglGetProcAddress("glBindVertexArrayOES");
         if (glGenVertexArraysOES) glGenVertexArraysOES(1, &vao);
         shaderInitialized = true;
-        WriteLog("Shader inicializado.");
+        WriteLog("Shader inicializado dentro de DrawESP.");
     }
 
     if (shaderInitialized && Camera_get_main && Camera_WorldToScreenPoint) {
@@ -109,6 +107,7 @@ void DrawESP() {
             if (glBindVertexArrayOES) glBindVertexArrayOES(vao);
 
             std::lock_guard<std::mutex> lock(players_mutex);
+            int drawn = 0;
             for (void* player : active_players) {
                 void* trans = Component_get_transform(player);
                 if (!trans) continue;
@@ -125,24 +124,47 @@ void DrawESP() {
                     float x = screenHead.x - (boxWidth / 2);
                     float sy = sh - topY;
                     DrawBox(x, sy, boxWidth, boxHeight, sw, sh);
+                    drawn++;
                 }
+            }
+            if (drawn > 0) {
+                static int count = 0;
+                if (count++ % 120 == 0) WriteLog("Dibujando cajas para jugadores!");
             }
         }
     }
 }
 
 EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
-    static int count = 0;
-    if (count++ % 60 == 0) WriteLog("eglSwapBuffers disparándose.");
+    WriteLog("hook_eglSwapBuffers llamado.");
     DrawESP();
     return orig_eglSwapBuffers(dpy, surf);
 }
 
-EGLBoolean hook_eglSwapBuffersWithDamageKHR(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects) {
-    static int count = 0;
-    if (count++ % 60 == 0) WriteLog("eglSwapBuffersWithDamageKHR disparándose.");
+EGLBoolean hook_eglSwapBuffersWithDamage(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects) {
+    WriteLog("hook_eglSwapBuffersWithDamage llamado.");
     DrawESP();
-    return orig_eglSwapBuffersWithDamageKHR(dpy, surf, rects, n_rects);
+    if (orig_eglSwapBuffersWithDamageKHR) return orig_eglSwapBuffersWithDamageKHR(dpy, surf, rects, n_rects);
+    if (orig_eglSwapBuffersWithDamageEXT) return orig_eglSwapBuffersWithDamageEXT(dpy, surf, rects, n_rects);
+    return EGL_TRUE;
+}
+
+void* hook_eglGetProcAddress(const char *procname) {
+    if (procname) {
+        if (strcmp(procname, "eglSwapBuffers") == 0) {
+            if (!orig_eglSwapBuffers) orig_eglSwapBuffers = (eglSwapBuffers_t)orig_eglGetProcAddress(procname);
+            return (void*)hook_eglSwapBuffers;
+        }
+        if (strcmp(procname, "eglSwapBuffersWithDamageKHR") == 0) {
+            if (!orig_eglSwapBuffersWithDamageKHR) orig_eglSwapBuffersWithDamageKHR = (eglSwapBuffersWithDamage_t)orig_eglGetProcAddress(procname);
+            return (void*)hook_eglSwapBuffersWithDamage;
+        }
+        if (strcmp(procname, "eglSwapBuffersWithDamageEXT") == 0) {
+            if (!orig_eglSwapBuffersWithDamageEXT) orig_eglSwapBuffersWithDamageEXT = (eglSwapBuffersWithDamage_t)orig_eglGetProcAddress(procname);
+            return (void*)hook_eglSwapBuffersWithDamage;
+        }
+    }
+    return orig_eglGetProcAddress(procname);
 }
 
 void* hack_thread(void*) {
@@ -157,24 +179,13 @@ void* hack_thread(void*) {
         Transform_get_position = (Vector3(*)(void*))(base + offset_Transform_pos);
         
         void* pmUpdate = (void*)(base + offset_PM_Update);
-        int res = DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
-        char buf[64]; sprintf(buf, "Hook PM_Update res: %d", res);
-        WriteLog(buf);
+        DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
         
         void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
         if (egl_handle) {
-            void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
-            if (swapFunc) {
-                int res1 = DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
-                sprintf(buf, "Hook eglSwapBuffers res: %d", res1);
-                WriteLog(buf);
-            }
-            
-            void* swapFuncKHR = dlsym(egl_handle, "eglSwapBuffersWithDamageKHR");
-            if (swapFuncKHR) {
-                int res2 = DobbyHook(swapFuncKHR, (void*)hook_eglSwapBuffersWithDamageKHR, (void**)&orig_eglSwapBuffersWithDamageKHR);
-                sprintf(buf, "Hook eglSwapBuffersWithDamageKHR res: %d", res2);
-                WriteLog(buf);
+            void* getProcAddrFunc = dlsym(egl_handle, "eglGetProcAddress");
+            if (getProcAddrFunc) {
+                DobbyHook(getProcAddrFunc, (void*)hook_eglGetProcAddress, (void**)&orig_eglGetProcAddress);
             }
         }
     }
