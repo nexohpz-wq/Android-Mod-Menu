@@ -1,20 +1,5 @@
 LOCAL_PATH := $(call my-dir)
 
-# 1. Cargar la librería Dobby precompilada desde la carpeta correcta
-include $(CLEAR_VARS)
-LOCAL_MODULE    := dobby
-LOCAL_SRC_FILES := Dobby/$(TARGET_ARCH_ABI)/libdobby.a
-include $(PREBUILT_STATIC_LIBRARY)
-
-# 2. Inyector Zygisk
-include $(CLEAR_VARS)
-LOCAL_MODULE    := zygisk
-LOCAL_SRC_FILES := zygisk.cpp
-LOCAL_CPPFLAGS  := -std=c++17 -fexceptions -frtti -Wno-error
-LOCAL_LDLIBS    := -llog -ldl
-include $(BUILD_SHARED_LIBRARY)
-
-# 3. ESP (Main.cpp + xDL)
 include $(CLEAR_VARS)
 LOCAL_MODULE    := MyLibName
 LOCAL_SRC_FILES := Main.cpp \
@@ -23,18 +8,26 @@ LOCAL_SRC_FILES := Main.cpp \
                    xDL/xdl_iterate.c \
                    xDL/xdl_linker.c \
                    xDL/xdl_lzma.c \
-                   xDL/xdl_util.c
+                   xDL/xdl_util.c \
+                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/*.cc)) \
+                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/Backend/UserMode/**/*.cc)) \
+                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/Core/**/*.cc)) \
+                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/InstructionRelocation/**/*.cc)) \
+                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/MemoryAllocator/**/*.cc)) \
+                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/TrampolineBridge/**/*.cc)) \
+                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/ImGui/*.cpp)) \
+                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/ImGui/backends/imgui_impl_opengl3.cpp))
 
 LOCAL_C_INCLUDES := $(LOCAL_PATH) \
                     $(LOCAL_PATH)/Includes \
                     $(LOCAL_PATH)/xDL \
-                    $(LOCAL_PATH)/Dobby
+                    $(LOCAL_PATH)/Dobby \
+                    $(LOCAL_PATH)/Dobby/include \
+                    $(LOCAL_PATH)/ImGui \
+                    $(LOCAL_PATH)/ImGui/backends
 
 LOCAL_CPPFLAGS  := -std=c++17 -fexceptions -frtti -Wno-error
 LOCAL_CFLAGS    := -Wno-error
 LOCAL_LDLIBS    := -llog -landroid -lEGL -lGLESv2 -ldl -lm
-
-# Enlazar Dobby
-LOCAL_STATIC_LIBRARIES := dobby
 
 include $(BUILD_SHARED_LIBRARY)
