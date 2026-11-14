@@ -15,8 +15,6 @@
 #include "Includes/Utils.hpp"
 #include "Dobby/dobby.h"
 
-#define LOG_TAG "ESP_REAL"
-
 struct Vector3 { float x, y, z; };
 
 uintptr_t offset_PM_Update = 0x29aa3d8;
@@ -32,7 +30,7 @@ Vector3 (*Transform_get_position)(void* trans) = nullptr;
 
 void (*orig_PM_Update)(void* instance) = nullptr;
 std::set<void*> active_players;
-std::mutex players_mutex; // Candado de seguridad
+std::mutex players_mutex;
 
 GLuint shaderProgram = 0;
 GLint positionLoc = -1;
@@ -47,6 +45,10 @@ void WriteLog(const char* msg) {
 }
 
 void hook_PM_Update(void* instance) {
+    static int count = 0;
+    if (count++ % 120 == 0) { // Loguea cada 2 segundos aprox
+        WriteLog("PlayerMovement.Update ejecutándose...");
+    }
     if (instance) {
         std::lock_guard<std::mutex> lock(players_mutex);
         if (active_players.size() < 100) {
@@ -61,9 +63,6 @@ eglSwapBuffers_t orig_eglSwapBuffers = nullptr;
 
 typedef EGLBoolean (*eglSwapBuffersWithDamageKHR_t)(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects);
 eglSwapBuffersWithDamageKHR_t orig_eglSwapBuffersWithDamageKHR = nullptr;
-
-typedef void* (*eglGetProcAddress_t)(const char *procname);
-eglGetProcAddress_t orig_eglGetProcAddress = nullptr;
 
 GLuint CreateShaderProgram() {
     const char* vSource = "attribute vec4 vPosition; void main() { gl_Position = vPosition; }";
@@ -133,30 +132,17 @@ void DrawESP() {
 }
 
 EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
+    static int count = 0;
+    if (count++ % 60 == 0) WriteLog("eglSwapBuffers disparándose.");
     DrawESP();
     return orig_eglSwapBuffers(dpy, surf);
 }
 
 EGLBoolean hook_eglSwapBuffersWithDamageKHR(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects) {
+    static int count = 0;
+    if (count++ % 60 == 0) WriteLog("eglSwapBuffersWithDamageKHR disparándose.");
     DrawESP();
     return orig_eglSwapBuffersWithDamageKHR(dpy, surf, rects, n_rects);
-}
-
-// EL NUEVO HOOK: Intercepta cuando el juego pide funciones
-void* hook_eglGetProcAddress(const char *procname) {
-    if (procname) {
-        if (strcmp(procname, "eglSwapBuffers") == 0) {
-            WriteLog("Juego pidió eglSwapBuffers");
-            if (!orig_eglSwapBuffers) orig_eglSwapBuffers = (eglSwapBuffers_t)orig_eglGetProcAddress(procname);
-            return (void*)hook_eglSwapBuffers;
-        }
-        if (strcmp(procname, "eglSwapBuffersWithDamageKHR") == 0) {
-            WriteLog("Juego pidió eglSwapBuffersWithDamageKHR");
-            if (!orig_eglSwapBuffersWithDamageKHR) orig_eglSwapBuffersWithDamageKHR = (eglSwapBuffersWithDamageKHR_t)orig_eglGetProcAddress(procname);
-            return (void*)hook_eglSwapBuffersWithDamageKHR;
-        }
-    }
-    return orig_eglGetProcAddress(procname);
 }
 
 void* hack_thread(void*) {
@@ -171,25 +157,24 @@ void* hack_thread(void*) {
         Transform_get_position = (Vector3(*)(void*))(base + offset_Transform_pos);
         
         void* pmUpdate = (void*)(base + offset_PM_Update);
-        DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
+        int res = DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
+        char buf[64]; sprintf(buf, "Hook PM_Update res: %d", res);
+        WriteLog(buf);
         
         void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
         if (egl_handle) {
-            // Hookear la función principal de EGL
-            void* getProcAddrFunc = dlsym(egl_handle, "eglGetProcAddress");
-            if (getProcAddrFunc) {
-                DobbyHook(getProcAddrFunc, (void*)hook_eglGetProcAddress, (void**)&orig_eglGetProcAddress);
-                WriteLog("Hook eglGetProcAddress instalado.");
-            }
-
             void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
-            if (swapFunc && !orig_eglSwapBuffers) {
-                DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
+            if (swapFunc) {
+                int res1 = DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
+                sprintf(buf, "Hook eglSwapBuffers res: %d", res1);
+                WriteLog(buf);
             }
             
             void* swapFuncKHR = dlsym(egl_handle, "eglSwapBuffersWithDamageKHR");
-            if (swapFuncKHR && !orig_eglSwapBuffersWithDamageKHR) {
-                DobbyHook(swapFuncKHR, (void*)hook_eglSwapBuffersWithDamageKHR, (void**)&orig_eglSwapBuffersWithDamageKHR);
+            if (swapFuncKHR) {
+                int res2 = DobbyHook(swapFuncKHR, (void*)hook_eglSwapBuffersWithDamageKHR, (void**)&orig_eglSwapBuffersWithDamageKHR);
+                sprintf(buf, "Hook eglSwapBuffersWithDamageKHR res: %d", res2);
+                WriteLog(buf);
             }
         }
     }
