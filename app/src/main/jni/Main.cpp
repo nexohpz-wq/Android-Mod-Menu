@@ -11,7 +11,6 @@
 #include <algorithm>
 #include <cstdio>
 #include <mutex>
-#include <string>
 #include <android/log.h>
 #include "Includes/Utils.hpp"
 #include "Dobby/dobby.h"
@@ -32,6 +31,7 @@ Vector3 (*Transform_get_position)(void* trans) = nullptr;
 void (*orig_PM_Update)(void* instance) = nullptr;
 std::set<void*> active_players;
 std::mutex players_mutex;
+std::mutex draw_mutex;
 
 GLuint shaderProgram = 0;
 GLint positionLoc = -1;
@@ -44,24 +44,6 @@ void WriteLog(const char* msg) {
     FILE *f = fopen("/data/data/com.ScarletWork.CounterFlame/files/esp_debug.txt", "a");
     if (f) { fprintf(f, "%s\n", msg); fclose(f); }
 }
-
-void hook_PM_Update(void* instance) {
-    if (instance) {
-        std::lock_guard<std::mutex> lock(players_mutex);
-        if (active_players.size() < 100) active_players.insert(instance);
-    }
-    if (orig_PM_Update) orig_PM_Update(instance);
-}
-
-typedef EGLBoolean (*eglSwapBuffers_t)(EGLDisplay dpy, EGLSurface surf);
-eglSwapBuffers_t orig_eglSwapBuffers = nullptr;
-
-typedef EGLBoolean (*eglSwapBuffersWithDamage_t)(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects);
-eglSwapBuffersWithDamage_t orig_eglSwapBuffersWithDamageKHR = nullptr;
-eglSwapBuffersWithDamage_t orig_eglSwapBuffersWithDamageEXT = nullptr;
-
-typedef void* (*eglGetProcAddress_t)(const char *procname);
-eglGetProcAddress_t orig_eglGetProcAddress = nullptr;
 
 GLuint CreateShaderProgram() {
     const char* vSource = "attribute vec4 vPosition; void main() { gl_Position = vPosition; }";
@@ -86,13 +68,6 @@ void DrawBox(float sx, float sy, float w, float h, float sw, float sh) {
 }
 
 void DrawESP() {
-    static int callCount = 0;
-    if (callCount++ % 120 == 0) {
-        char buf[128];
-        sprintf(buf, "DrawESP llamado. Jugadores: %zu", active_players.size());
-        WriteLog(buf);
-    }
-
     if (!shaderInitialized) {
         shaderProgram = CreateShaderProgram();
         positionLoc = glGetAttribLocation(shaderProgram, "vPosition");
@@ -100,101 +75,66 @@ void DrawESP() {
         glBindVertexArrayOES = (void(*)(GLuint))eglGetProcAddress("glBindVertexArrayOES");
         if (glGenVertexArraysOES) glGenVertexArraysOES(1, &vao);
         shaderInitialized = true;
-        WriteLog("Shader inicializado.");
+        WriteLog("Shader inicializado dentro de Update.");
     }
 
     if (shaderInitialized && Camera_get_main && Camera_WorldToScreenPoint) {
         void* cam = Camera_get_main();
-        if (!cam) {
-            if (callCount % 120 == 0) WriteLog("Cámara NULL.");
-            return;
-        }
-        
-        GLint viewport[4]; glGetIntegerv(GL_VIEWPORT, viewport);
-        float sw = viewport[2]; float sh = viewport[3];
+        if (cam) {
+            GLint viewport[4]; glGetIntegerv(GL_VIEWPORT, viewport);
+            float sw = viewport[2]; float sh = viewport[3];
 
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDisable(GL_SCISSOR_TEST); glDisable(GL_DEPTH_TEST); glDisable(GL_STENCIL_TEST);
-        glUseProgram(shaderProgram);
-        if (glBindVertexArrayOES) glBindVertexArrayOES(vao);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glDisable(GL_SCISSOR_TEST); glDisable(GL_DEPTH_TEST); glDisable(GL_STENCIL_TEST);
+            glUseProgram(shaderProgram);
+            if (glBindVertexArrayOES) glBindVertexArrayOES(vao);
 
-        std::lock_guard<std::mutex> lock(players_mutex);
-        int drawn = 0;
-        for (void* player : active_players) {
-            void* trans = Component_get_transform(player);
-            if (!trans) continue;
-            Vector3 pos = Transform_get_position(trans);
-            Vector3 headPos = pos; headPos.y += 1.75f;
-            Vector3 screenHead = Camera_WorldToScreenPoint(cam, headPos, 0);
-            Vector3 screenFeet = Camera_WorldToScreenPoint(cam, pos, 0);
+            std::lock_guard<std::mutex> lock(players_mutex);
+            int drawn = 0;
+            for (void* player : active_players) {
+                void* trans = Component_get_transform(player);
+                if (!trans) continue;
+                Vector3 pos = Transform_get_position(trans);
+                Vector3 headPos = pos; headPos.y += 1.75f;
+                Vector3 screenHead = Camera_WorldToScreenPoint(cam, headPos, 0);
+                Vector3 screenFeet = Camera_WorldToScreenPoint(cam, pos, 0);
 
-            if (screenHead.z > 0 && screenFeet.z > 0) { 
-                float topY = std::max(screenHead.y, screenFeet.y);
-                float bottomY = std::min(screenHead.y, screenFeet.y);
-                float boxHeight = topY - bottomY;
-                float boxWidth = boxHeight * 0.45f; 
-                float x = screenHead.x - (boxWidth / 2);
-                float sy = sh - topY;
-                DrawBox(x, sy, boxWidth, boxHeight, sw, sh);
-                drawn++;
+                if (screenHead.z > 0 && screenFeet.z > 0) { 
+                    float topY = std::max(screenHead.y, screenFeet.y);
+                    float bottomY = std::min(screenHead.y, screenFeet.y);
+                    float boxHeight = topY - bottomY;
+                    float boxWidth = boxHeight * 0.45f; 
+                    float x = screenHead.x - (boxWidth / 2);
+                    float sy = sh - topY;
+                    DrawBox(x, sy, boxWidth, boxHeight, sw, sh);
+                    drawn++;
+                }
             }
-        }
-        if (drawn > 0 && callCount % 120 == 0) {
-            WriteLog("Cajas dibujadas en pantalla!");
-        }
-    }
-}
-
-EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
-    static int count = 0;
-    if (count++ % 60 == 0) WriteLog("hook_eglSwapBuffers ejecutado.");
-    DrawESP();
-    return orig_eglSwapBuffers(dpy, surf);
-}
-
-EGLBoolean hook_eglSwapBuffersWithDamageKHR(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects) {
-    static int count = 0;
-    if (count++ % 60 == 0) WriteLog("hook_eglSwapBuffersWithDamageKHR ejecutado.");
-    DrawESP();
-    if (orig_eglSwapBuffersWithDamageKHR) return orig_eglSwapBuffersWithDamageKHR(dpy, surf, rects, n_rects);
-    return EGL_TRUE;
-}
-
-EGLBoolean hook_eglSwapBuffersWithDamageEXT(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects) {
-    static int count = 0;
-    if (count++ % 60 == 0) WriteLog("hook_eglSwapBuffersWithDamageEXT ejecutado.");
-    DrawESP();
-    if (orig_eglSwapBuffersWithDamageEXT) return orig_eglSwapBuffersWithDamageEXT(dpy, surf, rects, n_rects);
-    return EGL_TRUE;
-}
-
-void* hook_eglGetProcAddress(const char *procname) {
-    if (procname) {
-        if (strcmp(procname, "eglSwapBuffers") == 0) {
-            if (!orig_eglSwapBuffers) orig_eglSwapBuffers = (eglSwapBuffers_t)orig_eglGetProcAddress(procname);
-            return (void*)hook_eglSwapBuffers;
-        }
-        if (strcmp(procname, "eglSwapBuffersWithDamageKHR") == 0) {
-            if (!orig_eglSwapBuffersWithDamageKHR) orig_eglSwapBuffersWithDamageKHR = (eglSwapBuffersWithDamage_t)orig_eglGetProcAddress(procname);
-            return (void*)hook_eglSwapBuffersWithDamageKHR;
-        }
-        if (strcmp(procname, "eglSwapBuffersWithDamageEXT") == 0) {
-            if (!orig_eglSwapBuffersWithDamageEXT) orig_eglSwapBuffersWithDamageEXT = (eglSwapBuffersWithDamage_t)orig_eglGetProcAddress(procname);
-            return (void*)hook_eglSwapBuffersWithDamageEXT;
+            static int count = 0;
+            if (drawn > 0 && count++ % 120 == 0) WriteLog("Cajas dibujadas en Update!");
         }
     }
-    return orig_eglGetProcAddress(procname);
+}
+
+void hook_PM_Update(void* instance) {
+    if (instance) {
+        std::lock_guard<std::mutex> lock(players_mutex);
+        if (active_players.size() < 100) active_players.insert(instance);
+    }
+    
+    // Forzar dibujo en el hilo de Update
+    if (eglGetCurrentContext() != EGL_NO_CONTEXT) {
+        std::lock_guard<std::mutex> lock(draw_mutex);
+        DrawESP();
+    }
+
+    if (orig_PM_Update) orig_PM_Update(instance);
 }
 
 void* hack_thread(void*) {
-    WriteLog("hack_thread iniciado (esperando libil2cpp)");
-    
+    WriteLog("hack_thread iniciado");
     uintptr_t base = 0;
-    while (base == 0) {
-        base = getLibraryAddress("libil2cpp.so");
-        if (base == 0) sleep(1);
-    }
-    WriteLog("libil2cpp.so cargado.");
+    while (base == 0) { base = getLibraryAddress("libil2cpp.so"); if (base == 0) sleep(1); }
     
     Camera_get_main = (void*(*)())(base + offset_Camera_main);
     Camera_WorldToScreenPoint = (Vector3(*)(void*, Vector3, int))(base + offset_W2S);
@@ -204,39 +144,11 @@ void* hack_thread(void*) {
     void* pmUpdate = (void*)(base + offset_PM_Update);
     DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
     
-    void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
-    if (egl_handle) {
-        void* getProcAddrFunc = dlsym(egl_handle, "eglGetProcAddress");
-        if (getProcAddrFunc) {
-            DobbyHook(getProcAddrFunc, (void*)hook_eglGetProcAddress, (void**)&orig_eglGetProcAddress);
-            WriteLog("Hook eglGetProcAddress instalado.");
-        }
-
-        void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
-        if (swapFunc) {
-            DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
-            WriteLog("Hook eglSwapBuffers instalado.");
-        }
-        
-        void* swapKHR = dlsym(egl_handle, "eglSwapBuffersWithDamageKHR");
-        if (swapKHR) {
-            DobbyHook(swapKHR, (void*)hook_eglSwapBuffersWithDamageKHR, (void**)&orig_eglSwapBuffersWithDamageKHR);
-            WriteLog("Hook eglSwapBuffersWithDamageKHR instalado.");
-        }
-
-        void* swapEXT = dlsym(egl_handle, "eglSwapBuffersWithDamageEXT");
-        if (swapEXT) {
-            DobbyHook(swapEXT, (void*)hook_eglSwapBuffersWithDamageEXT, (void**)&orig_eglSwapBuffersWithDamageEXT);
-            WriteLog("Hook eglSwapBuffersWithDamageEXT instalado.");
-        }
-    }
     return nullptr;
 }
 
 extern "C" void StartESP() {
-    pthread_t pt; 
-    pthread_create(&pt, nullptr, hack_thread, nullptr); 
-    pthread_detach(pt);
+    pthread_t pt; pthread_create(&pt, nullptr, hack_thread, nullptr); pthread_detach(pt);
 }
 
 __attribute__((constructor))
