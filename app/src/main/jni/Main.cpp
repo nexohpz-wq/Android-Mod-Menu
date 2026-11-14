@@ -38,9 +38,9 @@ bool shaderInitialized = false;
 void (*glGenVertexArraysOES)(GLsizei, GLuint*) = nullptr;
 void (*glBindVertexArrayOES)(GLuint) = nullptr;
 
-// Función para escribir archivo
+// RUTA CORREGIDA: Ahora escribe en la carpeta del juego
 void WriteLog(const char* msg) {
-    FILE *f = fopen("/data/local/tmp/esp_debug.txt", "a");
+    FILE *f = fopen("/data/data/com.ScarletWork.CounterFlame/files/esp_debug.txt", "a");
     if (f) { fprintf(f, "%s\n", msg); fclose(f); }
 }
 
