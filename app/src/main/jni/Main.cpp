@@ -55,12 +55,8 @@ void hook_PM_Update(void* instance) {
 typedef EGLBoolean (*eglSwapBuffers_t)(EGLDisplay dpy, EGLSurface surf);
 eglSwapBuffers_t orig_eglSwapBuffers = nullptr;
 
-typedef EGLBoolean (*eglSwapBuffersWithDamage_t)(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects);
-eglSwapBuffersWithDamage_t orig_eglSwapBuffersWithDamageKHR = nullptr;
-eglSwapBuffersWithDamage_t orig_eglSwapBuffersWithDamageEXT = nullptr;
-
-typedef EGLBoolean (*eglMakeCurrent_t)(EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx);
-eglMakeCurrent_t orig_eglMakeCurrent = nullptr;
+typedef void* (*eglGetProcAddress_t)(const char *procname);
+eglGetProcAddress_t orig_eglGetProcAddress = nullptr;
 
 typedef void (*glDrawArraysInstanced_t)(GLenum mode, GLint first, GLsizei count, GLsizei instancecount);
 glDrawArraysInstanced_t orig_glDrawArraysInstanced = nullptr;
@@ -76,7 +72,7 @@ GLuint CreateShaderProgram() {
 
 void DrawTestSquare() {
     static bool logged = false;
-    if (!logged) { WriteLog("DrawTestSquare ejecutado!"); logged = true; }
+    if (!logged) { WriteLog("DrawTestSquare ejecutado en el hilo de OpenGL!"); logged = true; }
 
     if (!shaderInitialized) {
         shaderProgram = CreateShaderProgram();
@@ -101,33 +97,27 @@ void DrawTestSquare() {
     if (glBindVertexArrayOES) glBindVertexArrayOES(0);
 }
 
-EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
-    DrawTestSquare();
-    return orig_eglSwapBuffers(dpy, surf);
-}
-
-EGLBoolean hook_eglSwapBuffersWithDamageKHR(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects) {
-    DrawTestSquare();
-    if (orig_eglSwapBuffersWithDamageKHR) return orig_eglSwapBuffersWithDamageKHR(dpy, surf, rects, n_rects);
-    return EGL_TRUE;
-}
-
-EGLBoolean hook_eglSwapBuffersWithDamageEXT(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects) {
-    DrawTestSquare();
-    if (orig_eglSwapBuffersWithDamageEXT) return orig_eglSwapBuffersWithDamageEXT(dpy, surf, rects, n_rects);
-    return EGL_TRUE;
-}
-
-EGLBoolean hook_eglMakeCurrent(EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx) {
-    static int mcCount = 0;
-    if (mcCount++ < 3) WriteLog("eglMakeCurrent disparado!");
-    return orig_eglMakeCurrent(dpy, draw, read, ctx);
-}
-
+// Nuestro Hook de glDrawArraysInstanced
 void hook_glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instancecount) {
+    // Dejamos que el juego dibuje primero
     if (orig_glDrawArraysInstanced) orig_glDrawArraysInstanced(mode, first, count, instancecount);
-    static int drawCount = 0; // Corregido aquí
-    if (drawCount++ == 100) DrawTestSquare(); 
+    
+    // Dibujamos el cuadrado encima (solo 1 vez para probar)
+    static int drawCount = 0;
+    if (drawCount++ == 100) {
+        DrawTestSquare();
+    }
+}
+
+// Espía de eglGetProcAddress para interceptar glDrawArraysInstanced
+void* hook_eglGetProcAddress(const char *procname) {
+    if (procname) {
+        if (strcmp(procname, "glDrawArraysInstanced") == 0) {
+            if (!orig_glDrawArraysInstanced) orig_glDrawArraysInstanced = (glDrawArraysInstanced_t)orig_eglGetProcAddress(procname);
+            return (void*)hook_glDrawArraysInstanced;
+        }
+    }
+    return orig_eglGetProcAddress(procname);
 }
 
 void* hack_thread(void*) {
@@ -150,23 +140,11 @@ void* hack_thread(void*) {
     
     void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
     if (egl_handle) {
+        void* getProcAddrFunc = dlsym(egl_handle, "eglGetProcAddress");
+        if (getProcAddrFunc) DobbyHook(getProcAddrFunc, (void*)hook_eglGetProcAddress, (void**)&orig_eglGetProcAddress);
+        
         void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
         if (swapFunc) DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
-        
-        void* swapKHR = dlsym(egl_handle, "eglSwapBuffersWithDamageKHR");
-        if (swapKHR) DobbyHook(swapKHR, (void*)hook_eglSwapBuffersWithDamageKHR, (void**)&orig_eglSwapBuffersWithDamageKHR);
-
-        void* swapEXT = dlsym(egl_handle, "eglSwapBuffersWithDamageEXT");
-        if (swapEXT) DobbyHook(swapEXT, (void*)hook_eglSwapBuffersWithDamageEXT, (void**)&orig_eglSwapBuffersWithDamageEXT);
-
-        void* makeCurrent = dlsym(egl_handle, "eglMakeCurrent");
-        if (makeCurrent) DobbyHook(makeCurrent, (void*)hook_eglMakeCurrent, (void**)&orig_eglMakeCurrent);
-    }
-
-    void* gles_handle = dlopen("libGLESv2.so", RTLD_LAZY);
-    if (gles_handle) {
-        void* drawInstanced = dlsym(gles_handle, "glDrawArraysInstanced");
-        if (drawInstanced) DobbyHook(drawInstanced, (void*)hook_glDrawArraysInstanced, (void**)&orig_glDrawArraysInstanced);
     }
     return nullptr;
 }
