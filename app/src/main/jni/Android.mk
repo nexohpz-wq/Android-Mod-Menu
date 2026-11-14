@@ -9,24 +9,20 @@ LOCAL_SRC_FILES := Main.cpp \
                    xDL/xdl_linker.c \
                    xDL/xdl_lzma.c \
                    xDL/xdl_util.c \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/*.cc)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/Backend/UserMode/**/*.cc)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/Core/**/*.cc)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/InstructionRelocation/**/*.cc)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/MemoryAllocator/**/*.cc)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/Dobby/source/TrampolineBridge/**/*.cc)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/ImGui/*.cpp)) \
-                   $(subst $(LOCAL_PATH)/,,$(wildcard $(LOCAL_PATH)/ImGui/backends/imgui_impl_opengl3.cpp))
+                   $(call all-cpp-files-under, Dobby/source) \
+                   $(call all-c-files-under, Dobby/source) \
+                   $(call all-cpp-files-under, Menu/ImGui) \
+                   $(subst $(LOCAL_PATH)/,,$(LOCAL_PATH)/Menu/ImGui/backends/imgui_impl_opengl3.cpp)
 
 LOCAL_C_INCLUDES := $(LOCAL_PATH) \
                     $(LOCAL_PATH)/Includes \
                     $(LOCAL_PATH)/xDL \
                     $(LOCAL_PATH)/Dobby \
                     $(LOCAL_PATH)/Dobby/include \
-                    $(LOCAL_PATH)/ImGui \
-                    $(LOCAL_PATH)/ImGui/backends
+                    $(LOCAL_PATH)/Menu/ImGui \
+                    $(LOCAL_PATH)/Menu/ImGui/backends
 
-LOCAL_CPPFLAGS  := -std=c++17 -fexceptions -frtti -Wno-error
+LOCAL_CPPFLAGS  := -std=c++17 -fexceptions -frtti -Wno-error -DIMGUI_DEFINE_MATH_OPERATORS -DIMGUI_IMPL_OPENGL_ES2
 LOCAL_CFLAGS    := -Wno-error
 LOCAL_LDLIBS    := -llog -landroid -lEGL -lGLESv2 -ldl -lm
 
