@@ -31,7 +31,6 @@ Vector3 (*Transform_get_position)(void* trans) = nullptr;
 void (*orig_PM_Update)(void* instance) = nullptr;
 std::set<void*> active_players;
 std::mutex players_mutex;
-std::mutex draw_mutex;
 
 GLuint shaderProgram = 0;
 GLint positionLoc = -1;
@@ -40,80 +39,10 @@ bool shaderInitialized = false;
 void (*glGenVertexArraysOES)(GLsizei, GLuint*) = nullptr;
 void (*glBindVertexArrayOES)(GLuint) = nullptr;
 
+// Escribir en archivo para ver si el codigo corre
 void WriteLog(const char* msg) {
     FILE *f = fopen("/data/data/com.ScarletWork.CounterFlame/files/esp_debug.txt", "a");
     if (f) { fprintf(f, "%s\n", msg); fclose(f); }
-}
-
-GLuint CreateShaderProgram() {
-    const char* vSource = "attribute vec4 vPosition; void main() { gl_Position = vPosition; }";
-    const char* fSource = "precision mediump float; void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }";
-    GLuint vShader = glCreateShader(GL_VERTEX_SHADER); glShaderSource(vShader, 1, &vSource, NULL); glCompileShader(vShader);
-    GLuint fShader = glCreateShader(GL_FRAGMENT_SHADER); glShaderSource(fShader, 1, &fSource, NULL); glCompileShader(fShader);
-    GLuint program = glCreateProgram(); glAttachShader(program, vShader); glAttachShader(program, fShader); glLinkProgram(program);
-    return program;
-}
-
-void DrawBox(float sx, float sy, float w, float h, float sw, float sh) {
-    auto toNDC = [](float x, float y, float scrW, float scrH) {
-        return std::make_pair((x / scrW) * 2.0f - 1.0f, 1.0f - (y / scrH) * 2.0f);
-    };
-    auto p1 = toNDC(sx, sy, sw, sh); auto p2 = toNDC(sx + w, sy, sw, sh);
-    auto p3 = toNDC(sx, sy + h, sw, sh); auto p4 = toNDC(sx + w, sy + h, sw, sh);
-    GLfloat vertices[] = { p1.first, p1.second, p2.first, p2.second, p1.first, p1.second, p3.first, p3.second, p2.first, p2.second, p4.first, p4.second, p3.first, p3.second, p4.first, p4.second };
-    glVertexAttribPointer(positionLoc, 2, GL_FLOAT, GL_FALSE, 0, vertices);
-    glEnableVertexAttribArray(positionLoc);
-    glDrawArrays(GL_LINES, 0, 8);
-    glDisableVertexAttribArray(positionLoc);
-}
-
-void DrawESP() {
-    if (!shaderInitialized) {
-        shaderProgram = CreateShaderProgram();
-        positionLoc = glGetAttribLocation(shaderProgram, "vPosition");
-        glGenVertexArraysOES = (void(*)(GLsizei, GLuint*))eglGetProcAddress("glGenVertexArraysOES");
-        glBindVertexArrayOES = (void(*)(GLuint))eglGetProcAddress("glBindVertexArrayOES");
-        if (glGenVertexArraysOES) glGenVertexArraysOES(1, &vao);
-        shaderInitialized = true;
-        WriteLog("Shader inicializado dentro de Update.");
-    }
-
-    if (shaderInitialized && Camera_get_main && Camera_WorldToScreenPoint) {
-        void* cam = Camera_get_main();
-        if (cam) {
-            GLint viewport[4]; glGetIntegerv(GL_VIEWPORT, viewport);
-            float sw = viewport[2]; float sh = viewport[3];
-
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
-            glDisable(GL_SCISSOR_TEST); glDisable(GL_DEPTH_TEST); glDisable(GL_STENCIL_TEST);
-            glUseProgram(shaderProgram);
-            if (glBindVertexArrayOES) glBindVertexArrayOES(vao);
-
-            std::lock_guard<std::mutex> lock(players_mutex);
-            int drawn = 0;
-            for (void* player : active_players) {
-                void* trans = Component_get_transform(player);
-                if (!trans) continue;
-                Vector3 pos = Transform_get_position(trans);
-                Vector3 headPos = pos; headPos.y += 1.75f;
-                Vector3 screenHead = Camera_WorldToScreenPoint(cam, headPos, 0);
-                Vector3 screenFeet = Camera_WorldToScreenPoint(cam, pos, 0);
-
-                if (screenHead.z > 0 && screenFeet.z > 0) { 
-                    float topY = std::max(screenHead.y, screenFeet.y);
-                    float bottomY = std::min(screenHead.y, screenFeet.y);
-                    float boxHeight = topY - bottomY;
-                    float boxWidth = boxHeight * 0.45f; 
-                    float x = screenHead.x - (boxWidth / 2);
-                    float sy = sh - topY;
-                    DrawBox(x, sy, boxWidth, boxHeight, sw, sh);
-                    drawn++;
-                }
-            }
-            static int count = 0;
-            if (drawn > 0 && count++ % 120 == 0) WriteLog("Cajas dibujadas en Update!");
-        }
-    }
 }
 
 void hook_PM_Update(void* instance) {
@@ -121,37 +50,124 @@ void hook_PM_Update(void* instance) {
         std::lock_guard<std::mutex> lock(players_mutex);
         if (active_players.size() < 100) active_players.insert(instance);
     }
-    
-    // Forzar dibujo en el hilo de Update
-    if (eglGetCurrentContext() != EGL_NO_CONTEXT) {
-        std::lock_guard<std::mutex> lock(draw_mutex);
-        DrawESP();
-    }
-
     if (orig_PM_Update) orig_PM_Update(instance);
 }
 
-void* hack_thread(void*) {
-    WriteLog("hack_thread iniciado");
-    uintptr_t base = 0;
-    while (base == 0) { base = getLibraryAddress("libil2cpp.so"); if (base == 0) sleep(1); }
+typedef EGLBoolean (*eglSwapBuffers_t)(EGLDisplay dpy, EGLSurface surf);
+eglSwapBuffers_t orig_eglSwapBuffers = nullptr;
+
+typedef EGLBoolean (*eglSwapBuffersWithDamage_t)(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects);
+eglSwapBuffersWithDamage_t orig_eglSwapBuffersWithDamageKHR = nullptr;
+
+GLuint CreateShaderProgram() {
+    const char* vSource = "attribute vec4 vPosition; void main() { gl_Position = vPosition; }";
+    const char* fSource = "precision mediump float; void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }"; // Rojo
     
-    Camera_get_main = (void*(*)())(base + offset_Camera_main);
-    Camera_WorldToScreenPoint = (Vector3(*)(void*, Vector3, int))(base + offset_W2S);
-    Component_get_transform = (void*(*)(void*))(base + offset_Component_transform);
-    Transform_get_position = (Vector3(*)(void*))(base + offset_Transform_pos);
-    
-    void* pmUpdate = (void*)(base + offset_PM_Update);
-    DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
-    
-    return nullptr;
+    GLuint vShader = glCreateShader(GL_VERTEX_SHADER); glShaderSource(vShader, 1, &vSource, NULL); glCompileShader(vShader);
+    GLuint fShader = glCreateShader(GL_FRAGMENT_SHADER); glShaderSource(fShader, 1, &fSource, NULL); glCompileShader(fShader);
+    GLuint program = glCreateProgram(); glAttachShader(program, vShader); glAttachShader(program, fShader); glLinkProgram(program);
+    return program;
 }
 
-extern "C" void StartESP() {
-    pthread_t pt; pthread_create(&pt, nullptr, hack_thread, nullptr); pthread_detach(pt);
+void DrawTestSquare() {
+    if (!shaderInitialized) {
+        shaderProgram = CreateShaderProgram();
+        positionLoc = glGetAttribLocation(shaderProgram, "vPosition");
+        glGenVertexArraysOES = (void(*)(GLsizei, GLuint*))eglGetProcAddress("glGenVertexArraysOES");
+        glBindVertexArrayOES = (void(*)(GLuint))eglGetProcAddress("glBindVertexArrayOES");
+        if (glGenVertexArraysOES) glGenVertexArraysOES(1, &vao);
+        shaderInitialized = true;
+        WriteLog("Shader inicializado.");
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDisable(GL_SCISSOR_TEST); 
+    glDisable(GL_DEPTH_TEST); 
+    glDisable(GL_STENCIL_TEST);
+    glUseProgram(shaderProgram);
+    if (glBindVertexArrayOES) glBindVertexArrayOES(vao);
+
+    // Cuadrado rojo gigante en el centro de la pantalla
+    GLfloat vertices[] = {
+        -0.5f,  0.5f,   0.5f,  0.5f,  // Arriba
+        -0.5f,  0.5f,  -0.5f, -0.5f,  // Izquierda
+         0.5f,  0.5f,   0.5f, -0.5f,  // Derecha
+        -0.5f, -0.5f,   0.5f, -0.5f   // Abajo
+    };
+
+    glVertexAttribPointer(positionLoc, 2, GL_FLOAT, GL_FALSE, 0, vertices);
+    glEnableVertexAttribArray(positionLoc);
+    glDrawArrays(GL_LINES, 0, 8);
+    glDisableVertexAttribArray(positionLoc);
+    
+    if (glBindVertexArrayOES) glBindVertexArrayOES(0);
+}
+
+EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
+    DrawTestSquare();
+    return orig_eglSwapBuffers(dpy, surf);
+}
+
+EGLBoolean hook_eglSwapBuffersWithDamageKHR(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects) {
+    DrawTestSquare();
+    if (orig_eglSwapBuffersWithDamageKHR) return orig_eglSwapBuffersWithDamageKHR(dpy, surf, rects, n_rects);
+    return EGL_TRUE;
+}
+
+void* hack_thread(void*) {
+    WriteLog("Hack Thread Iniciado");
+    
+    void* il2cpp_handle = nullptr;
+    while (!il2cpp_handle) {
+        il2cpp_handle = dlopen("libil2cpp.so", RTLD_LAZY);
+        if (!il2cpp_handle) sleep(1);
+    }
+    
+    uintptr_t base = 0;
+    void* il2cpp_init = dlsym(il2cpp_handle, "il2cpp_init");
+    Dl_info info;
+    if (il2cpp_init && dladdr(il2cpp_init, &info)) {
+        base = (uintptr_t)info.dli_fbase;
+    }
+    
+    char buf[128];
+    sprintf(buf, "Base libil2cpp: %lx", (unsigned long)base);
+    WriteLog(buf);
+    
+    if (base != 0) {
+        Camera_get_main = (void*(*)())(base + offset_Camera_main);
+        Camera_WorldToScreenPoint = (Vector3(*)(void*, Vector3, int))(base + offset_W2S);
+        Component_get_transform = (void*(*)(void*))(base + offset_Component_transform);
+        Transform_get_position = (Vector3(*)(void*))(base + offset_Transform_pos);
+        
+        void* pmUpdate = (void*)(base + offset_PM_Update);
+        int res = DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
+        sprintf(buf, "Hook PM_Update res: %d", res);
+        WriteLog(buf);
+    }
+    
+    void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
+    if (egl_handle) {
+        void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
+        if (swapFunc) {
+            int r1 = DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
+            sprintf(buf, "Hook eglSwapBuffers res: %d", r1);
+            WriteLog(buf);
+        }
+        
+        void* swapKHR = dlsym(egl_handle, "eglSwapBuffersWithDamageKHR");
+        if (swapKHR) {
+            int r2 = DobbyHook(swapKHR, (void*)hook_eglSwapBuffersWithDamageKHR, (void**)&orig_eglSwapBuffersWithDamageKHR);
+            sprintf(buf, "Hook eglSwapBuffersWithDamageKHR res: %d", r2);
+            WriteLog(buf);
+        }
+    }
+    return nullptr;
 }
 
 __attribute__((constructor))
 void lib_main() {
-    StartESP();
+    pthread_t pt;
+    pthread_create(&pt, nullptr, hack_thread, nullptr);
+    pthread_detach(pt);
 }
