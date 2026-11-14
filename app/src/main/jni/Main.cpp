@@ -45,6 +45,9 @@ void WriteLog(const char* msg) {
 }
 
 void hook_PM_Update(void* instance) {
+    static int count = 0;
+    if (count++ < 5) WriteLog("PlayerMovement.Update ejecutándose!");
+    
     if (instance) {
         std::lock_guard<std::mutex> lock(players_mutex);
         if (active_players.size() < 100) active_players.insert(instance);
@@ -58,9 +61,6 @@ eglSwapBuffers_t orig_eglSwapBuffers = nullptr;
 typedef EGLBoolean (*eglSwapBuffersWithDamage_t)(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects);
 eglSwapBuffersWithDamage_t orig_eglSwapBuffersWithDamageKHR = nullptr;
 eglSwapBuffersWithDamage_t orig_eglSwapBuffersWithDamageEXT = nullptr;
-
-typedef void* (*eglGetProcAddress_t)(const char *procname);
-eglGetProcAddress_t orig_eglGetProcAddress = nullptr;
 
 GLuint CreateShaderProgram() {
     const char* vSource = "attribute vec4 vPosition; void main() { gl_Position = vPosition; }";
@@ -92,7 +92,7 @@ void DrawESP() {
         glBindVertexArrayOES = (void(*)(GLuint))eglGetProcAddress("glBindVertexArrayOES");
         if (glGenVertexArraysOES) glGenVertexArraysOES(1, &vao);
         shaderInitialized = true;
-        WriteLog("Shader inicializado dentro de DrawESP.");
+        WriteLog("Shader inicializado.");
     }
 
     if (shaderInitialized && Camera_get_main && Camera_WorldToScreenPoint) {
@@ -107,7 +107,6 @@ void DrawESP() {
             if (glBindVertexArrayOES) glBindVertexArrayOES(vao);
 
             std::lock_guard<std::mutex> lock(players_mutex);
-            int drawn = 0;
             for (void* player : active_players) {
                 void* trans = Component_get_transform(player);
                 if (!trans) continue;
@@ -124,69 +123,75 @@ void DrawESP() {
                     float x = screenHead.x - (boxWidth / 2);
                     float sy = sh - topY;
                     DrawBox(x, sy, boxWidth, boxHeight, sw, sh);
-                    drawn++;
                 }
-            }
-            if (drawn > 0) {
-                static int count = 0;
-                if (count++ % 120 == 0) WriteLog("Dibujando cajas para jugadores!");
             }
         }
     }
 }
 
 EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
-    WriteLog("hook_eglSwapBuffers llamado.");
+    static int count = 0;
+    if (count++ % 60 == 0) WriteLog("eglSwapBuffers disparándose!");
     DrawESP();
     return orig_eglSwapBuffers(dpy, surf);
 }
 
-EGLBoolean hook_eglSwapBuffersWithDamage(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects) {
-    WriteLog("hook_eglSwapBuffersWithDamage llamado.");
+EGLBoolean hook_eglSwapBuffersWithDamageKHR(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects) {
+    static int count = 0;
+    if (count++ % 60 == 0) WriteLog("eglSwapBuffersWithDamageKHR disparándose!");
     DrawESP();
-    if (orig_eglSwapBuffersWithDamageKHR) return orig_eglSwapBuffersWithDamageKHR(dpy, surf, rects, n_rects);
-    if (orig_eglSwapBuffersWithDamageEXT) return orig_eglSwapBuffersWithDamageEXT(dpy, surf, rects, n_rects);
-    return EGL_TRUE;
+    return orig_eglSwapBuffersWithDamageKHR(dpy, surf, rects, n_rects);
 }
 
-void* hook_eglGetProcAddress(const char *procname) {
-    if (procname) {
-        if (strcmp(procname, "eglSwapBuffers") == 0) {
-            if (!orig_eglSwapBuffers) orig_eglSwapBuffers = (eglSwapBuffers_t)orig_eglGetProcAddress(procname);
-            return (void*)hook_eglSwapBuffers;
-        }
-        if (strcmp(procname, "eglSwapBuffersWithDamageKHR") == 0) {
-            if (!orig_eglSwapBuffersWithDamageKHR) orig_eglSwapBuffersWithDamageKHR = (eglSwapBuffersWithDamage_t)orig_eglGetProcAddress(procname);
-            return (void*)hook_eglSwapBuffersWithDamage;
-        }
-        if (strcmp(procname, "eglSwapBuffersWithDamageEXT") == 0) {
-            if (!orig_eglSwapBuffersWithDamageEXT) orig_eglSwapBuffersWithDamageEXT = (eglSwapBuffersWithDamage_t)orig_eglGetProcAddress(procname);
-            return (void*)hook_eglSwapBuffersWithDamage;
-        }
-    }
-    return orig_eglGetProcAddress(procname);
+EGLBoolean hook_eglSwapBuffersWithDamageEXT(EGLDisplay dpy, EGLSurface surf, EGLint* rects, EGLint n_rects) {
+    static int count = 0;
+    if (count++ % 60 == 0) WriteLog("eglSwapBuffersWithDamageEXT disparándose!");
+    DrawESP();
+    return orig_eglSwapBuffersWithDamageEXT(dpy, surf, rects, n_rects);
 }
 
 void* hack_thread(void*) {
-    WriteLog("hack_thread iniciado");
-    do { sleep(1); } while (!isLibraryLoaded("libil2cpp.so"));
+    WriteLog("hack_thread iniciado (esperando libil2cpp)");
     
-    uintptr_t base = getLibraryAddress("libil2cpp.so");
-    if (base != 0) {
-        Camera_get_main = (void*(*)())(base + offset_Camera_main);
-        Camera_WorldToScreenPoint = (Vector3(*)(void*, Vector3, int))(base + offset_W2S);
-        Component_get_transform = (void*(*)(void*))(base + offset_Component_transform);
-        Transform_get_position = (Vector3(*)(void*))(base + offset_Transform_pos);
+    // Bypass a isLibraryLoaded (que se colgaba)
+    uintptr_t base = 0;
+    while (base == 0) {
+        base = getLibraryAddress("libil2cpp.so");
+        if (base == 0) sleep(1);
+    }
+    WriteLog("libil2cpp.so cargado.");
+    
+    Camera_get_main = (void*(*)())(base + offset_Camera_main);
+    Camera_WorldToScreenPoint = (Vector3(*)(void*, Vector3, int))(base + offset_W2S);
+    Component_get_transform = (void*(*)(void*))(base + offset_Component_transform);
+    Transform_get_position = (Vector3(*)(void*))(base + offset_Transform_pos);
+    
+    void* pmUpdate = (void*)(base + offset_PM_Update);
+    int res1 = DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
+    char buf[64]; sprintf(buf, "Hook PM_Update res: %d", res1);
+    WriteLog(buf);
+    
+    void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
+    if (egl_handle) {
+        void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
+        if (swapFunc) {
+            int res2 = DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
+            sprintf(buf, "Hook eglSwapBuffers res: %d", res2);
+            WriteLog(buf);
+        }
         
-        void* pmUpdate = (void*)(base + offset_PM_Update);
-        DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
-        
-        void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
-        if (egl_handle) {
-            void* getProcAddrFunc = dlsym(egl_handle, "eglGetProcAddress");
-            if (getProcAddrFunc) {
-                DobbyHook(getProcAddrFunc, (void*)hook_eglGetProcAddress, (void**)&orig_eglGetProcAddress);
-            }
+        void* swapKHR = dlsym(egl_handle, "eglSwapBuffersWithDamageKHR");
+        if (swapKHR) {
+            int res3 = DobbyHook(swapKHR, (void*)hook_eglSwapBuffersWithDamageKHR, (void**)&orig_eglSwapBuffersWithDamageKHR);
+            sprintf(buf, "Hook eglSwapBuffersWithDamageKHR res: %d", res3);
+            WriteLog(buf);
+        }
+
+        void* swapEXT = dlsym(egl_handle, "eglSwapBuffersWithDamageEXT");
+        if (swapEXT) {
+            int res4 = DobbyHook(swapEXT, (void*)hook_eglSwapBuffersWithDamageEXT, (void**)&orig_eglSwapBuffersWithDamageEXT);
+            sprintf(buf, "Hook eglSwapBuffersWithDamageEXT res: %d", res4);
+            WriteLog(buf);
         }
     }
     return nullptr;
