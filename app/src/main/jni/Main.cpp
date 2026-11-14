@@ -97,12 +97,10 @@ void DrawTestSquare() {
     if (glBindVertexArrayOES) glBindVertexArrayOES(0);
 }
 
-// --- AQUI ESTA LA FUNCION QUE FALTABA ---
 EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surf) {
     DrawTestSquare();
     return orig_eglSwapBuffers(dpy, surf);
 }
-// ----------------------------------------
 
 void hook_glDrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instancecount) {
     if (orig_glDrawArraysInstanced) orig_glDrawArraysInstanced(mode, first, count, instancecount);
@@ -124,35 +122,47 @@ void* hook_eglGetProcAddress(const char *procname) {
 }
 
 void* hack_thread(void*) {
-    WriteLog("Hack Thread Iniciado");
-    void* il2cpp_handle = nullptr;
-    while (!il2cpp_handle) { il2cpp_handle = dlopen("libil2cpp.so", RTLD_LAZY); if (!il2cpp_handle) sleep(1); }
+    WriteLog("hack_thread iniciado (esperando libil2cpp)");
+    
+    // MÉTODO INFALIBLE: Usar getLibraryAddress en lugar de dlopen
     uintptr_t base = 0;
-    void* il2cpp_init = dlsym(il2cpp_handle, "il2cpp_init");
-    Dl_info info;
-    if (il2cpp_init && dladdr(il2cpp_init, &info)) { base = (uintptr_t)info.dli_fbase; }
+    while (base == 0) {
+        base = getLibraryAddress("libil2cpp.so");
+        if (base == 0) sleep(1);
+    }
+    WriteLog("libil2cpp.so cargado.");
     
     if (base != 0) {
         Camera_get_main = (void*(*)())(base + offset_Camera_main);
         Camera_WorldToScreenPoint = (Vector3(*)(void*, Vector3, int))(base + offset_W2S);
         Component_get_transform = (void*(*)(void*))(base + offset_Component_transform);
         Transform_get_position = (Vector3(*)(void*))(base + offset_Transform_pos);
+        
         void* pmUpdate = (void*)(base + offset_PM_Update);
         DobbyHook(pmUpdate, (void*)hook_PM_Update, (void**)&orig_PM_Update);
+        WriteLog("Hook PM_Update instalado.");
     }
     
     void* egl_handle = dlopen("libEGL.so", RTLD_LAZY);
     if (egl_handle) {
         void* getProcAddrFunc = dlsym(egl_handle, "eglGetProcAddress");
-        if (getProcAddrFunc) DobbyHook(getProcAddrFunc, (void*)hook_eglGetProcAddress, (void**)&orig_eglGetProcAddress);
+        if (getProcAddrFunc) {
+            DobbyHook(getProcAddrFunc, (void*)hook_eglGetProcAddress, (void**)&orig_eglGetProcAddress);
+            WriteLog("Hook eglGetProcAddress instalado.");
+        }
         
         void* swapFunc = dlsym(egl_handle, "eglSwapBuffers");
-        if (swapFunc) DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
+        if (swapFunc) {
+            DobbyHook(swapFunc, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
+            WriteLog("Hook eglSwapBuffers instalado.");
+        }
     }
     return nullptr;
 }
 
 __attribute__((constructor))
 void lib_main() {
-    pthread_t pt; pthread_create(&pt, nullptr, hack_thread, nullptr); pthread_detach(pt);
+    pthread_t pt; 
+    pthread_create(&pt, nullptr, hack_thread, nullptr); 
+    pthread_detach(pt);
 }
